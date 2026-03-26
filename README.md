@@ -1,0 +1,1 @@
+# go-solid-score
