@@ -1,3 +1,5 @@
+// Package plugin provides [analysis.Analyzer] definitions for integration
+// with golangci-lint and other go/analysis-based tools.
 package plugin
 
 import (

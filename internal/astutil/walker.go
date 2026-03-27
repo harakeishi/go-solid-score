@@ -1,3 +1,5 @@
+// Package astutil provides AST traversal and extraction utilities for
+// analyzing Go source code structures, metrics, and type information.
 package astutil
 
 import (

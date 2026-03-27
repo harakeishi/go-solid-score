@@ -1,3 +1,5 @@
+// Package config handles loading and merging of configuration for
+// go-solid-score, including scoring weights, thresholds, and output format.
 package config
 
 import (
