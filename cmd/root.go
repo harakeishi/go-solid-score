@@ -101,7 +101,9 @@ func run(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("formatting output: %w", err)
 	}
-	fmt.Fprint(os.Stdout, output)
+	if _, err := fmt.Fprint(os.Stdout, output); err != nil {
+		return fmt.Errorf("writing output: %w", err)
+	}
 
 	// Check thresholds
 	if cfg.MinScore > 0 {
