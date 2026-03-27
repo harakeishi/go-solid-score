@@ -27,6 +27,20 @@ func (a *DIPAnalyzer) Analyze(pkg *model.PackageInfo) []Result {
 	return results
 }
 
+// depWeight represents a weighted dependency count.
+// Field dependencies (structural) are weighted more heavily than
+// method parameter dependencies (call-time).
+type depWeight struct {
+	total float64
+	iface float64
+}
+
+const (
+	fieldDepWeight       = 1.0
+	constructorDepWeight = 1.0
+	paramDepWeight       = 0.3 // method params are less significant for DIP
+)
+
 func (a *DIPAnalyzer) analyzeStruct(s *model.StructInfo, pkg *model.PackageInfo) Result {
 	r := Result{
 		Principle:  DIP,
@@ -37,10 +51,10 @@ func (a *DIPAnalyzer) analyzeStruct(s *model.StructInfo, pkg *model.PackageInfo)
 		Confidence: ConfidenceHigh,
 	}
 
-	var totalDeps, ifaceDeps int
+	var dw depWeight
 	var concreteDeps []string
 
-	// Analyze struct fields
+	// Analyze struct fields (highest weight - structural dependencies)
 	for _, f := range s.Fields {
 		if f.Name == "" {
 			continue // skip embedded fields
@@ -48,31 +62,31 @@ func (a *DIPAnalyzer) analyzeStruct(s *model.StructInfo, pkg *model.PackageInfo)
 		if isWhitelisted(f.TypeName, a.userWhitelist) {
 			continue
 		}
-		totalDeps++
+		dw.total += fieldDepWeight
 		if f.IsIface {
-			ifaceDeps++
+			dw.iface += fieldDepWeight
 		} else {
 			concreteDeps = append(concreteDeps, fmt.Sprintf("field %s: %s", f.Name, f.TypeName))
 		}
 	}
 
-	// Analyze constructor parameters (New* functions)
+	// Analyze constructor parameters (high weight - injected at creation)
 	constructor := a.findConstructor(s.Name, pkg)
 	if constructor != nil {
 		for _, p := range constructor.Params {
 			if isWhitelisted(p.TypeName, a.userWhitelist) {
 				continue
 			}
-			totalDeps++
+			dw.total += constructorDepWeight
 			if p.IsIface {
-				ifaceDeps++
+				dw.iface += constructorDepWeight
 			} else {
 				concreteDeps = append(concreteDeps, fmt.Sprintf("constructor param %s: %s", p.Name, p.TypeName))
 			}
 		}
 	}
 
-	// Analyze exported method parameters only
+	// Analyze exported method parameters (low weight - call-time dependencies)
 	for _, m := range s.Methods {
 		if !m.IsExported {
 			continue
@@ -81,23 +95,23 @@ func (a *DIPAnalyzer) analyzeStruct(s *model.StructInfo, pkg *model.PackageInfo)
 			if isWhitelisted(p.TypeName, a.userWhitelist) {
 				continue
 			}
-			totalDeps++
+			dw.total += paramDepWeight
 			if p.IsIface {
-				ifaceDeps++
+				dw.iface += paramDepWeight
 			} else {
-				concreteDeps = append(concreteDeps, fmt.Sprintf("method %s param %s: %s", m.Name, p.Name, p.TypeName))
+				concreteDeps = append(concreteDeps, fmt.Sprintf("method %s param %s: %s (low weight)", m.Name, p.Name, p.TypeName))
 			}
 		}
 	}
 
-	if totalDeps == 0 {
+	if dw.total == 0 {
 		r.Confidence = ConfidenceLowMedium
 		r.Details = append(r.Details, "no non-whitelisted dependencies")
 		return r
 	}
 
-	// Score based on interface dependency ratio
-	ratio := float64(ifaceDeps) / float64(totalDeps)
+	// Score based on weighted interface dependency ratio
+	ratio := dw.iface / dw.total
 	r.Score = ratio * 100
 
 	// Bonus: if constructor accepts interfaces (dependency injection pattern)
@@ -107,13 +121,13 @@ func (a *DIPAnalyzer) analyzeStruct(s *model.StructInfo, pkg *model.PackageInfo)
 	}
 
 	if len(concreteDeps) > 0 {
-		r.Details = append(r.Details, fmt.Sprintf("%d/%d dependencies are concrete:", len(concreteDeps), totalDeps))
+		r.Details = append(r.Details, fmt.Sprintf("%.1f/%.1f weighted dependencies are concrete:", dw.total-dw.iface, dw.total))
 		for _, d := range concreteDeps {
 			r.Details = append(r.Details, "  - "+d)
 		}
 	}
 
-	if totalDeps >= 3 {
+	if dw.total >= 3 {
 		r.Confidence = ConfidenceMediumHigh
 	} else {
 		r.Confidence = ConfidenceMedium

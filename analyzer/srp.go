@@ -37,6 +37,24 @@ func (a *SRPAnalyzer) analyzeStruct(s *model.StructInfo) Result {
 		r.Details = append(r.Details, "too few methods for meaningful LCOM4 analysis")
 		return r
 	}
+
+	// Mitigation: structs with no fields and few methods (e.g., interceptors,
+	// stateless handlers) get a minimum score since LCOM4 is unreliable
+	// when there are no shared fields to form connections.
+	hasFields := false
+	for _, f := range s.Fields {
+		if f.Name != "" { // skip embedded
+			hasFields = true
+			break
+		}
+	}
+	if !hasFields && len(methods) <= 5 {
+		r.Score = 80
+		r.Confidence = ConfidenceLow
+		r.Details = append(r.Details, "stateless struct (no fields): LCOM4 not applicable, minimum score applied")
+		return r
+	}
+
 	if len(methods) <= 3 {
 		r.Confidence = ConfidenceLowMedium
 	} else if len(methods) >= 5 {

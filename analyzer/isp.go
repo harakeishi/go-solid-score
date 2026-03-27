@@ -43,6 +43,17 @@ func (a *ISPAnalyzer) analyzeStruct(s *model.StructInfo, pkg *model.PackageInfo)
 		return r
 	}
 
+	// Detect decorator/adapter pattern: single non-whitelisted field where
+	// all public methods delegate to it. In this case, the large public
+	// surface is dictated by the wrapped type, not by poor design.
+	if isDecoratorPattern(s, pubMethods) {
+		r.Score = 85
+		r.Confidence = ConfidenceMediumHigh
+		r.Details = append(r.Details, fmt.Sprintf("decorator/adapter pattern detected (%d methods delegating to single field)", len(pubMethods)))
+		r.Score = Clamp(r.Score)
+		return r
+	}
+
 	// Score based on public method count (public interface size)
 	methodCount := len(pubMethods)
 	switch {
@@ -104,6 +115,47 @@ func (a *ISPAnalyzer) analyzeStruct(s *model.StructInfo, pkg *model.PackageInfo)
 
 	r.Score = Clamp(r.Score)
 	return r
+}
+
+// isDecoratorPattern detects if a struct wraps a single dependency and
+// all public methods access only that one field (delegation pattern).
+func isDecoratorPattern(s *model.StructInfo, pubMethods []*model.MethodInfo) bool {
+	if len(pubMethods) < 3 {
+		return false // too few methods to be meaningful
+	}
+
+	// Find non-embedded, non-primitive fields
+	var significantFields []*model.FieldInfo
+	for _, f := range s.Fields {
+		if f.Name == "" {
+			continue // embedded
+		}
+		significantFields = append(significantFields, f)
+	}
+
+	if len(significantFields) != 1 {
+		return false // decorator wraps exactly one dependency
+	}
+
+	targetField := significantFields[0].Name
+
+	// Check that most public methods access only the single field
+	delegating := 0
+	for _, m := range pubMethods {
+		accessesTarget := false
+		for _, af := range m.AccessedFields {
+			if af == targetField {
+				accessesTarget = true
+				break
+			}
+		}
+		if accessesTarget {
+			delegating++
+		}
+	}
+
+	// At least 70% of public methods must delegate to the single field
+	return float64(delegating)/float64(len(pubMethods)) >= 0.7
 }
 
 func (a *ISPAnalyzer) structImplements(s *model.StructInfo, iface *model.InterfaceInfo) bool {
