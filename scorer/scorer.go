@@ -1,3 +1,5 @@
+// Package scorer orchestrates SOLID principle analyzers and computes
+// weighted aggregate scores for each target in a Go package.
 package scorer
 
 import (

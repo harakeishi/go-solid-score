@@ -1,3 +1,6 @@
+// Package analyzer provides static analysis of Go source code against the
+// SOLID design principles. Each principle (SRP, OCP, LSP, ISP, DIP) has a
+// dedicated analyzer that implements the [Analyzer] interface.
 package analyzer
 
 import "github.com/harakeishi/go-solid-score/model"

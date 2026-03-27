@@ -1,3 +1,5 @@
+// Package parser loads Go packages using golang.org/x/tools and extracts
+// structural information into the model types used by the analyzers.
 package parser
 
 import (
