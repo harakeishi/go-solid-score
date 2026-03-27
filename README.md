@@ -84,6 +84,105 @@ dip:
 | ISP       | 0.20   |
 | DIP       | 0.25   |
 
+## Scoring Logic
+
+Each struct is scored 0–100 per principle. The total score is a weighted average of all five.
+
+<details>
+<summary>SRP — Single Responsibility Principle</summary>
+
+Uses **LCOM4** (Lack of Cohesion of Methods) to measure struct cohesion.
+
+- Builds a graph where two methods are connected if they share a field or call each other
+- Counts connected components via BFS — more components = more responsibilities
+
+| LCOM4 | Penalty |
+|-------|---------|
+| ≤ 1   | None    |
+| 2     | −40     |
+| ≥ 3   | −70     |
+
+Additional penalties: cyclomatic complexity > 20 (−10) or > 40 (−20), method count > 10 (−5) or > 15 (−15).
+
+</details>
+
+<details>
+<summary>OCP — Open/Closed Principle</summary>
+
+Detects code patterns that require modification when adding new types.
+
+| Pattern | Per Instance | Max Penalty |
+|---------|-------------|-------------|
+| Type switch | −15 | −40 |
+| Type assertion | −10 | −40 |
+| Reflect usage | −5 | −20 |
+
+A density penalty applies if type-check statements exceed 15% (−10) or 30% (−20) of total statements. Interface parameters in methods earn a bonus (+5 each, max +20).
+
+</details>
+
+<details>
+<summary>LSP — Liskov Substitution Principle</summary>
+
+Checks whether interface implementations honour their contracts.
+
+| Violation | Penalty |
+|-----------|---------|
+| Method calls `panic()` | −20 |
+| No-op implementation | −15 |
+| Missing override of embedded interface method | −10 each |
+
+Only methods that satisfy a declared interface are evaluated.
+
+</details>
+
+<details>
+<summary>ISP — Interface Segregation Principle</summary>
+
+Scores based on public method count (Go idiom favours small interfaces).
+
+| Public Methods | Base Score |
+|----------------|-----------|
+| ≤ 5  | 100 |
+| 6–10 | 80  |
+| 11–15 | 60 |
+| 16–20 | 40 |
+| > 20 | 20  |
+
+Penalties for implementing large interfaces (6–8 methods: −10, 9–12: −20, >12: −30). Decorator/adapter patterns are auto-detected and scored at 85. LCOM4 > 2 on ≥ 4 public methods adds −15.
+
+</details>
+
+<details>
+<summary>DIP — Dependency Inversion Principle</summary>
+
+Measures the ratio of interface dependencies to total dependencies.
+
+```
+Score = (weighted interface deps / weighted total deps) × 100
+```
+
+| Dependency Source | Weight |
+|-------------------|--------|
+| Struct fields | 1.0 |
+| Constructor params | 1.0 |
+| Exported method params | 0.3 |
+
+Constructor accepting interfaces earns +15 bonus. Standard library types and user-configured whitelist types are excluded.
+
+</details>
+
+<details>
+<summary>Total Score Calculation</summary>
+
+```
+Total = Σ(principle_score × weight) / Σ(weights)
+```
+
+Weights are configurable (see [Configuration](#configuration)). Zero-weighted principles are excluded. The result is rounded to one decimal place.
+
+</details>
+
 ## golangci-lint Integration
 
 go-solid-score can be used as a `go/analysis` plugin with golangci-lint:
