@@ -205,6 +205,40 @@ within the same package. This makes it suitable as a join key when comparing
 two runs (e.g. a base commit vs. a PR) to detect score regressions, rather than
 relying on absolute paths that differ across machines and refactors.
 
+## Diffing scores (regression gating)
+
+Compare the current scores against a baseline to detect regressions:
+
+```bash
+# 1. Capture a baseline (e.g. on the main branch)
+go-solid-score -f json ./... > base.json
+
+# 2. After making changes, diff against it
+go-solid-score diff --base base.json ./...
+
+# Fail CI when a target regresses or a new target is below a floor
+go-solid-score diff --base base.json --min-score 70 --fail-on-regression ./...
+
+# Markdown output for PR comments
+go-solid-score diff --base base.json -f markdown ./... > comment.md
+```
+
+Targets are matched by their stable `id`, so renames and file moves do not
+produce false regressions. Each target is classified as REGRESSED, IMPROVED,
+UNCHANGED, NEW, NEW-LOW, or REMOVED.
+
+| Flag | Default | Meaning |
+|------|---------|---------|
+| `--base` | (required) | Baseline JSON to compare against |
+| `--max-drop` | 5.0 | A total drop greater than this is a regression |
+| `--min-score` | 0 | A new target below this is NEW-LOW (0 disables) |
+| `--fail-on-regression` | false | Exit 1 on any regression or new-low |
+| `-f, --format` | text | `text`, `json`, or `markdown` |
+
+See [`.github/workflows/solid-diff.yml`](.github/workflows/solid-diff.yml) for a
+PR-comment workflow (requires `pull-requests: write`; fork PRs fall back to a
+job summary).
+
 ## golangci-lint Integration
 
 go-solid-score can be used as a `go/analysis` plugin with golangci-lint:

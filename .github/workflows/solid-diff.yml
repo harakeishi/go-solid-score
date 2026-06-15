@@ -1,0 +1,43 @@
+name: solid-score-diff
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  diff:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Install go-solid-score
+        run: go install github.com/harakeishi/go-solid-score@latest
+
+      - name: Score base (PR base commit)
+        env:
+          # base.sha is a commit SHA (hex), but pass it via env and quote it
+          # rather than interpolating into the shell, per Actions best practice.
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git worktree add /tmp/base "$BASE_SHA"
+          (cd /tmp/base && go-solid-score -f json ./...) > base.json
+
+      - name: Diff against base
+        run: |
+          go-solid-score diff --base base.json -f markdown ./... > comment.md
+          go-solid-score diff --base base.json ./...  # human-readable log
+
+      - name: Comment on PR
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: go-solid-score-diff
+          path: comment.md
