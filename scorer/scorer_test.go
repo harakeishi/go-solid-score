@@ -130,12 +130,49 @@ func TestScorer_DistinctPackagesSameNameNotMerged(t *testing.T) {
 	}
 }
 
-// TestScoreResult_TargetIDFallback verifies the fallback to bare name when no
-// package path is available (e.g. unresolved package).
+// TestScoreResult_TargetIDFallback verifies that when no package path is
+// available (e.g. an unresolved package), the ID falls back to "<file>:<name>"
+// rather than a bare name — so that two same-named targets in different files
+// keep distinct IDs and are never silently merged by diff tooling.
 func TestScoreResult_TargetIDFallback(t *testing.T) {
-	r := &scorer.ScoreResult{TargetName: "Foo"}
-	if got := r.TargetID(); got != "Foo" {
-		t.Errorf("expected fallback TargetID Foo, got %s", got)
+	a := &scorer.ScoreResult{TargetName: "Foo", TargetFile: "a.go"}
+	b := &scorer.ScoreResult{TargetName: "Foo", TargetFile: "b.go"}
+
+	if got := a.TargetID(); got != "a.go:Foo" {
+		t.Errorf("expected fallback TargetID a.go:Foo, got %s", got)
+	}
+	if a.TargetID() == b.TargetID() {
+		t.Errorf("same-named targets in different files must not share an ID, both were %s", a.TargetID())
+	}
+}
+
+// TestScorer_FallbackKeySeparatesByFile verifies that when the package path is
+// unknown, same-named targets in different files are kept as separate results
+// (not merged) — matching the TargetID fallback rule, so the merge key and the
+// diff key stay consistent.
+func TestScorer_FallbackKeySeparatesByFile(t *testing.T) {
+	analyzers := []analyzer.Analyzer{
+		&stubAnalyzer{
+			principle: analyzer.SRP,
+			results: []analyzer.Result{
+				{Principle: analyzer.SRP, TargetName: "Foo", TargetFile: "a.go", Score: 100},
+				{Principle: analyzer.SRP, TargetName: "Foo", TargetFile: "b.go", Score: 0},
+			},
+		},
+	}
+
+	s := scorer.New(analyzers, config.DefaultWeights())
+	results := s.Score(&model.PackageInfo{Name: "test"}) // no PkgPath -> fallback
+
+	if len(results) != 2 {
+		t.Fatalf("expected 2 separate results in fallback mode, got %d", len(results))
+	}
+	ids := map[string]bool{}
+	for _, r := range results {
+		ids[r.TargetID()] = true
+	}
+	if !ids["a.go:Foo"] || !ids["b.go:Foo"] {
+		t.Errorf("expected ids a.go:Foo and b.go:Foo, got %v", ids)
 	}
 }
 

@@ -9,7 +9,7 @@ import (
 	"github.com/harakeishi/go-solid-score/model"
 )
 
-// ScoreResult holds SOLID scores for a single target (struct or function).
+// ScoreResult holds SOLID scores for a single analyzed struct.
 type ScoreResult struct {
 	// TargetPkg is the import path of the package the target belongs to.
 	// Together with TargetName it forms the stable identity used to match
@@ -24,15 +24,27 @@ type ScoreResult struct {
 	Details    map[analyzer.Principle][]string
 }
 
-// TargetID returns the stable identifier for this target: the package import
-// path joined with the target name (e.g. "github.com/foo/bar.MyStruct").
-// It is independent of the absolute file path, so it survives file renames
-// and moves within the same package — making it suitable as a diff key.
-func (r *ScoreResult) TargetID() string {
-	if r.TargetPkg == "" {
-		return r.TargetName
+// targetID computes the canonical identity for a target. It is the single
+// source of truth for how targets are identified, used both as the internal
+// merge key during scoring and as the public diff key exposed via
+// ScoreResult.TargetID — keeping the two in lockstep.
+//
+// When the package path is known, the ID is "<pkgPath>.<name>", which is
+// independent of the absolute file path and therefore survives file renames
+// and moves within the same package. When the package path is unknown (e.g.
+// an unresolved package), it falls back to "<file>:<name>" so that targets in
+// different files do not silently collapse into one ID.
+func targetID(pkgPath, name, file string) string {
+	if pkgPath == "" {
+		return file + ":" + name
 	}
-	return r.TargetPkg + "." + r.TargetName
+	return pkgPath + "." + name
+}
+
+// TargetID returns the stable identifier for this target (see [targetID]).
+// It is suitable as a join key when diffing scores across runs.
+func (r *ScoreResult) TargetID() string {
+	return targetID(r.TargetPkg, r.TargetName, r.TargetFile)
 }
 
 // Scorer orchestrates all SOLID analyzers and computes weighted totals.
@@ -57,13 +69,10 @@ func (s *Scorer) Score(pkg *model.PackageInfo) []*ScoreResult {
 	for _, a := range s.Analyzers {
 		results := a.Analyze(pkg)
 		for _, r := range results {
-			// Identify a target by its package path + name so that the same
-			// target maps to the same key even if its source file is renamed
-			// or moved. Fall back to file path when no package path is known.
-			key := r.TargetPkg + "." + r.TargetName
-			if r.TargetPkg == "" {
-				key = r.TargetFile + ":" + r.TargetName
-			}
+			// Use the canonical target identity as the merge key so that the
+			// same target maps to one ScoreResult across analyzers, and so the
+			// internal key matches the public diff key exactly.
+			key := targetID(r.TargetPkg, r.TargetName, r.TargetFile)
 			sr, ok := resultsByTarget[key]
 			if !ok {
 				sr = &ScoreResult{

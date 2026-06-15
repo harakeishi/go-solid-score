@@ -13,6 +13,7 @@ import (
 func makeResults() []*scorer.ScoreResult {
 	return []*scorer.ScoreResult{
 		{
+			TargetPkg:  "example.com/pkg",
 			TargetName: "GoodStruct",
 			TargetFile: "good.go",
 			TargetLine: 10,
@@ -79,8 +80,10 @@ func TestJSONFormatter(t *testing.T) {
 
 	var parsed struct {
 		Results []struct {
-			Name  string  `json:"name"`
-			Total float64 `json:"total"`
+			ID      string  `json:"id"`
+			Name    string  `json:"name"`
+			Package string  `json:"package"`
+			Total   float64 `json:"total"`
 		} `json:"results"`
 		Summary struct {
 			TotalStructs int     `json:"total_structs"`
@@ -95,6 +98,35 @@ func TestJSONFormatter(t *testing.T) {
 	}
 	if parsed.Summary.AverageScore <= 0 {
 		t.Error("expected positive average score")
+	}
+
+	// Index results by name to assert the diff-oriented id/package fields.
+	byName := make(map[string]struct {
+		ID      string
+		Package string
+	})
+	for _, r := range parsed.Results {
+		byName[r.Name] = struct {
+			ID      string
+			Package string
+		}{r.ID, r.Package}
+	}
+
+	// With a known package path, id is "<pkgPath>.<name>".
+	if got := byName["GoodStruct"].ID; got != "example.com/pkg.GoodStruct" {
+		t.Errorf("GoodStruct id: got %q, want %q", got, "example.com/pkg.GoodStruct")
+	}
+	if got := byName["GoodStruct"].Package; got != "example.com/pkg" {
+		t.Errorf("GoodStruct package: got %q, want %q", got, "example.com/pkg")
+	}
+
+	// Without a package path, id falls back to "<file>:<name>" so that
+	// distinct files never collapse to the same id.
+	if got := byName["BadStruct"].ID; got != "bad.go:BadStruct" {
+		t.Errorf("BadStruct fallback id: got %q, want %q", got, "bad.go:BadStruct")
+	}
+	if got := byName["BadStruct"].Package; got != "" {
+		t.Errorf("BadStruct package: got %q, want empty", got)
 	}
 }
 
