@@ -36,6 +36,8 @@ func newRootCmd() *cobra.Command {
 	cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Show detailed breakdown per struct")
 	cmd.Version = version
 
+	cmd.AddCommand(newDiffCmd())
+
 	return cmd
 }
 
