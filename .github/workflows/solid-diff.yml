@@ -19,8 +19,12 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Install go-solid-score
-        run: go install github.com/harakeishi/go-solid-score@latest
+      # Build the tool from this checkout so the workflow always matches the
+      # code under review. (External users can instead
+      # `go install github.com/harakeishi/go-solid-score@latest` and drop the
+      # ./gss path prefix below.)
+      - name: Build go-solid-score
+        run: go build -o "$RUNNER_TEMP/gss" .
 
       - name: Score base (PR base commit)
         env:
@@ -28,13 +32,15 @@ jobs:
           # rather than interpolating into the shell, per Actions best practice.
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
+          # Analyze the base commit's source with the freshly built binary, so
+          # the base does not need to contain the tool itself.
           git worktree add /tmp/base "$BASE_SHA"
-          (cd /tmp/base && go-solid-score -f json ./...) > base.json
+          (cd /tmp/base && "$RUNNER_TEMP/gss" -f json ./...) > base.json
 
       - name: Diff against base
         run: |
-          go-solid-score diff --base base.json -f markdown ./... > comment.md
-          go-solid-score diff --base base.json ./...  # human-readable log
+          "$RUNNER_TEMP/gss" diff --base base.json -f markdown ./... > comment.md
+          "$RUNNER_TEMP/gss" diff --base base.json ./...  # human-readable log
 
       # Same-repo PRs have a write token: post (and update) a sticky comment.
       - name: Comment on PR
