@@ -404,6 +404,25 @@ A regression test (`TestSRPAnalyzer_GraduatedLCOM4`) and a `LargeFacade` fixture
 (16 methods, LCOM4=2) lock in the separation between an attenuated aggregate and
 a fragmented bag of methods.
 
+#### Review follow-ups
+
+Two refinements addressed code-review feedback on the first cut:
+
+- **Continuous base penalty.** The base penalty stepped straight from 40
+  (LCOM4=2) to 70 (LCOM4≥3); because attenuation moves the opposite way as
+  components grow, the *final* penalty still jumped sharply at the 2→3 boundary
+  (≈+32 at 20 methods). The base now ramps `40 + 15×(LCOM4−2)`, capped at 70, so
+  the largest jump shrinks to ≈+23 and the metric gains resolution above three
+  groups (a 3-group split now reads as less severe than a 5-group one). Only
+  LCOM4≥3 types shift (slightly up); LCOM4=2 facades are unchanged, and
+  `GodStruct` (LCOM4=5) still saturates at −70.
+- **Confidence drop reserved for real aggregates.** The confidence reduction
+  fired for *any* attenuation (avg group > 3). It is now gated on substantial
+  attenuation (`atten ≤ 0.5`, i.e. avg group ≳ 7.7), so a marginally attenuated
+  small type (`SmallSplit` fixture, avg 3.5) keeps high confidence while genuine
+  aggregates (`gin.Engine`, avg 16.5) drop to medium — matching the stated
+  intent. Covered by an added assertion in `TestSRPAnalyzer_GraduatedLCOM4`.
+
 ## Future work
 
 - **SRP/LCOM4 — graduate by component *size*, not just count.** The fifth round

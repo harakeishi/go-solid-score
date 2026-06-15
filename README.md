@@ -101,9 +101,14 @@ Uses **LCOM4** (Lack of Cohesion of Methods) to measure struct cohesion.
 |-------|--------------|
 | ≤ 1   | None         |
 | 2     | −40          |
-| ≥ 3   | −70          |
+| 3     | −55          |
+| 4     | −70          |
+| ≥ 5   | −70 (capped) |
 
-The cohesion penalty is **graduated by average component size** (methods ÷
+The base penalty ramps `40 + 15×(LCOM4−2)` (capped at −70) so that more
+disconnected groups read as progressively worse rather than stepping straight to
+the maximum at three. The cohesion penalty is then **graduated by average
+component size** (methods ÷
 LCOM4). LCOM4 counts how many disconnected method groups a struct splits into,
 but the same count means very different things at different sizes: two groups
 among 3 methods is genuine fragmentation (most methods are islands), whereas two

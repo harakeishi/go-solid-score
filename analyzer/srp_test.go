@@ -69,14 +69,16 @@ func TestSRPAnalyzer_GraduatedLCOM4(t *testing.T) {
 	results := a.Analyze(pkgs[0])
 
 	var facade, god float64
-	var facadeFound, godFound bool
-	var facadeConf float64
+	var facadeFound, godFound, smallFound bool
+	var facadeConf, smallConf float64
 	for _, r := range results {
 		switch r.TargetName {
 		case "LargeFacade":
 			facade, facadeFound, facadeConf = r.Score, true, r.Confidence
 		case "GodStruct":
 			god, godFound = r.Score, true
+		case "SmallSplit":
+			smallFound, smallConf = true, r.Confidence
 		}
 	}
 	if !facadeFound {
@@ -84,6 +86,9 @@ func TestSRPAnalyzer_GraduatedLCOM4(t *testing.T) {
 	}
 	if !godFound {
 		t.Fatal("GodStruct not found in results")
+	}
+	if !smallFound {
+		t.Fatal("SmallSplit not found in results")
 	}
 
 	if facade <= god {
@@ -97,10 +102,19 @@ func TestSRPAnalyzer_GraduatedLCOM4(t *testing.T) {
 		t.Errorf("LargeFacade SRP %.1f should stay below 90: a large type is still "+
 			"penalized by method count even when its cohesion penalty is attenuated", facade)
 	}
-	// Attenuated aggregates are a weaker SRP signal; confidence is reduced.
+	// A substantially attenuated aggregate is a weaker SRP signal; confidence
+	// is reduced.
 	if facadeConf > analyzer.ConfidenceMedium {
 		t.Errorf("LargeFacade SRP confidence %.2f should be reduced (<= %.2f) when the "+
-			"cohesion penalty is attenuated", facadeConf, analyzer.ConfidenceMedium)
+			"cohesion penalty is substantially attenuated", facadeConf, analyzer.ConfidenceMedium)
+	}
+	// A type that is only marginally attenuated (SmallSplit: avg ~3.5
+	// methods/group) is not a large aggregate, so its confidence must be left
+	// high — the confidence drop is reserved for genuine aggregates, not any
+	// fractional attenuation.
+	if smallConf <= analyzer.ConfidenceMedium {
+		t.Errorf("SmallSplit SRP confidence %.2f should stay high (> %.2f): a barely "+
+			"attenuated small type is not a large aggregate", smallConf, analyzer.ConfidenceMedium)
 	}
 }
 

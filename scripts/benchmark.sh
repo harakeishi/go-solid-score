@@ -11,6 +11,9 @@
 # Use it to regression-check scoring changes against real-world code over time —
 # see docs/scoring-analysis.md for the calibration history this reproduces.
 #
+# Requirements: bash, git, a Go toolchain, network access to clone the corpus,
+# and python3 (used only to aggregate the JSON output into the summary table).
+#
 # Usage:
 #   scripts/benchmark.sh                 # full corpus
 #   scripts/benchmark.sh cobra gin       # subset by name

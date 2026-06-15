@@ -41,3 +41,22 @@ func (f *LargeFacade) SetRespHeader(k, v string)  { f.respHdr[k] = v }
 func (f *LargeFacade) RespHeader(k string) string { return f.respHdr[k] }
 func (f *LargeFacade) ClearResp()                 { f.respCode = 0; f.respBody = nil; f.respHdr = nil }
 func (f *LargeFacade) HasRespBody() bool          { return len(f.respBody) > 0 }
+
+// SmallSplit is a small type whose methods split into two groups (LCOM4=2) but
+// whose average group size (~3.5 methods) is only marginally above the
+// attenuation threshold, so its cohesion penalty is barely reduced. It is *not*
+// a large structured aggregate, so — unlike LargeFacade — its SRP confidence
+// must stay high: the confidence drop is reserved for substantially attenuated
+// aggregates, not for any type that is fractionally attenuated.
+type SmallSplit struct {
+	a int
+	b int
+}
+
+func (s *SmallSplit) IncA()   { s.a++ }
+func (s *SmallSplit) DecA()   { s.a-- }
+func (s *SmallSplit) A() int  { return s.a }
+func (s *SmallSplit) ResetA() { s.a = 0 }
+func (s *SmallSplit) IncB()   { s.b++ }
+func (s *SmallSplit) DecB()   { s.b-- }
+func (s *SmallSplit) B() int  { return s.b }
