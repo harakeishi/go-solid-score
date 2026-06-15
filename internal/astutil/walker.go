@@ -11,14 +11,15 @@ import (
 
 // BodyMetrics holds metrics extracted from a function/method body.
 type BodyMetrics struct {
-	Complexity        int
-	AccessedFields    []string
-	CalledMethods     []string
-	HasPanic          bool
-	TypeSwitchCount   int
-	TypeAssertCount   int
-	ReflectUsageCount int
-	StmtCount         int
+	Complexity            int
+	AccessedFields        []string
+	CalledMethods         []string
+	HasPanic              bool
+	HasUnconditionalPanic bool
+	TypeSwitchCount       int
+	TypeAssertCount       int
+	ReflectUsageCount     int
+	StmtCount             int
 }
 
 // WalkBody walks a function body and extracts all metrics.
@@ -31,15 +32,54 @@ func WalkBody(body *ast.BlockStmt, info *types.Info, fset *token.FileSet) *BodyM
 	}
 	ast.Inspect(body, w.visit)
 	return &BodyMetrics{
-		Complexity:        w.complexity,
-		AccessedFields:    w.accessedFields,
-		CalledMethods:     w.calledMethods,
-		HasPanic:          w.hasPanic,
-		TypeSwitchCount:   w.typeSwitchCount,
-		TypeAssertCount:   w.typeAssertCount,
-		ReflectUsageCount: w.reflectUsageCount,
-		StmtCount:         w.stmtCount,
+		Complexity:            w.complexity,
+		AccessedFields:        w.accessedFields,
+		CalledMethods:         w.calledMethods,
+		HasPanic:              w.hasPanic,
+		HasUnconditionalPanic: hasUnconditionalPanic(body.List),
+		TypeSwitchCount:       w.typeSwitchCount,
+		TypeAssertCount:       w.typeAssertCount,
+		ReflectUsageCount:     w.reflectUsageCount,
+		StmtCount:             w.stmtCount,
 	}
+}
+
+// hasUnconditionalPanic reports whether the straight-line execution path of a
+// statement list contains a panic(...) call that is not guarded by any
+// conditional or loop. An unconditional panic indicates a method whose defined
+// behavior is to abort — e.g. a "not implemented" stub — which is a Liskov
+// substitution smell. Panics nested inside if/for/range/switch/select are
+// treated as fail-fast argument/state guards (idiomatic in Go, e.g. validating
+// a routing pattern or rejecting a nil handler) and are deliberately not
+// flagged. Recursion descends only into constructs that always execute (bare
+// blocks and labeled statements), never into branches.
+func hasUnconditionalPanic(stmts []ast.Stmt) bool {
+	for _, s := range stmts {
+		switch st := s.(type) {
+		case *ast.ExprStmt:
+			if isPanicCall(st.X) {
+				return true
+			}
+		case *ast.BlockStmt:
+			if hasUnconditionalPanic(st.List) {
+				return true
+			}
+		case *ast.LabeledStmt:
+			if hasUnconditionalPanic([]ast.Stmt{st.Stmt}) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func isPanicCall(e ast.Expr) bool {
+	call, ok := e.(*ast.CallExpr)
+	if !ok {
+		return false
+	}
+	ident, ok := call.Fun.(*ast.Ident)
+	return ok && ident.Name == "panic"
 }
 
 type bodyWalker struct {

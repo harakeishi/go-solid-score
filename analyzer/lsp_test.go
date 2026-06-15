@@ -49,3 +49,27 @@ func TestLSPAnalyzer_Bad(t *testing.T) {
 	}
 	t.Error("ReadOnlySaver not found in results")
 }
+
+// TestLSPAnalyzer_GuardPanicNotPenalized verifies that a method which panics
+// only inside an argument guard (fail-fast, idiomatic Go) is not treated as an
+// LSP violation — unlike an unconditional "not implemented" panic.
+func TestLSPAnalyzer_GuardPanicNotPenalized(t *testing.T) {
+	pkgs, err := parser.Parse([]string{"../testdata/lsp"})
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+
+	a := analyzer.NewLSPAnalyzer()
+	results := a.Analyze(pkgs[0])
+
+	for _, r := range results {
+		if r.TargetName == "GuardedSaver" {
+			if r.Score < 100 {
+				t.Errorf("GuardedSaver LSP score %.1f should be 100 "+
+					"(guard panics are fail-fast, not LSP violations)", r.Score)
+			}
+			return
+		}
+	}
+	t.Error("GuardedSaver not found in results")
+}

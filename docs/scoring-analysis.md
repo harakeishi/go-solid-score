@@ -155,6 +155,57 @@ driven partly by genuine concrete coupling and partly by `SRP = 0` (the
 facade/LCOM4 effect), which is the next calibration target rather than a DIP
 artefact.
 
+## Second validation round (wider corpus)
+
+To confirm the DIP fixes generalise and to probe the *other* principles, a more
+diverse set was analysed: `uber-go/zap`, `go-chi/chi`, `etcd-io/bbolt`,
+`spf13/viper`, `gorilla/mux`, and `pkg/errors`. The DIP changes held up (no new
+DIP false positives), and the SRP/LCOM4 facade effect reappeared as expected
+(`bbolt.Bucket`, `bbolt.Tx`, `mux.Route`, `zap.contextObserver`). One new,
+clear-cut false positive surfaced in **LSP**.
+
+### LSP penalised idiomatic fail-fast guard panics
+
+`chi.Mux` — a widely used HTTP router — scored **LSP = 20**. Inspection showed
+every panic in `Mux` is a fail-fast guard on invalid API usage:
+
+```go
+func (mx *Mux) Method(method, pattern string, handler http.Handler) {
+    m, ok := methodMap[strings.ToUpper(method)]
+    if !ok {
+        panic(fmt.Sprintf("chi: '%s' http method is not supported.", method))
+    }
+    ...
+}
+```
+
+Panicking on a programming error / violated precondition is idiomatic Go
+(`regexp.MustCompile`, `http.ServeMux.Handle` on a duplicate pattern, etc.) and
+is *not* a Liskov violation: every conforming implementation rejects the same
+invalid input. The real LSP smell is an **unconditional** panic — a method whose
+defined behaviour is to abort, e.g. a `panic("not implemented")` stub on a
+read-only type.
+
+**Fix:** the LSP analyzer now penalises only *unconditional* panics. A new
+`HasUnconditionalPanic` signal (computed in the walker) flags a `panic(...)` on
+the method's straight-line path; panics nested inside `if`/`for`/`switch`/
+`select` guards are treated as fail-fast and ignored. Because this only relaxes
+penalties, no LSP true positive regresses — the `ReadOnlySaver.Save` stub
+(unconditional panic) is still flagged. `chi.Mux` LSP went **20 → 100**, and a
+guard-panic check on `gin.Redirect.Render` confirmed its remaining penalty comes
+from a separate no-op heuristic, not the panic.
+
+### Observed but not changed
+
+- **OCP on dynamic-config code.** `viper.Viper` scores `OCP = 25` from heavy
+  type switching on `any` config values — arguably a real OCP cost, left as-is.
+- **ISP on externally-mandated wide interfaces.** `zap.jsonEncoder` scores
+  `ISP = 0` for implementing `zapcore.Encoder` (~20 `AppendX` methods). The
+  width is dictated by a required external contract, not by the implementer; the
+  decorator/adapter exemption does not cover this. A candidate refinement is to
+  discount ISP when a type's public surface is mandated by an interface it
+  implements rather than self-imposed.
+
 ## Future work
 
 - **SRP/LCOM4 calibration for large facade types.** Replace the flat `-70`

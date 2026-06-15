@@ -131,6 +131,7 @@ func ExtractMethods(file *ast.File, fpath string, fset *token.FileSet, info *typ
 			mi.AccessedFields = m.AccessedFields
 			mi.CalledMethods = m.CalledMethods
 			mi.HasPanic = m.HasPanic
+			mi.HasUnconditionalPanic = m.HasUnconditionalPanic
 			mi.TypeSwitchCount = m.TypeSwitchCount
 			mi.TypeAssertCount = m.TypeAssertCount
 			mi.ReflectUsageCount = m.ReflectUsageCount

@@ -128,11 +128,14 @@ Checks whether interface implementations honour their contracts.
 
 | Violation | Penalty |
 |-----------|---------|
-| Method calls `panic()` | −20 |
+| Method panics *unconditionally* (e.g. a "not implemented" stub) | −20 |
 | No-op implementation | −15 |
 | Missing override of embedded interface method | −10 each |
 
-Only methods that satisfy a declared interface are evaluated.
+Only methods that satisfy a declared interface are evaluated. Panics that fire
+only inside an argument/state guard (`if bad { panic(...) }`) are idiomatic
+fail-fast in Go and are **not** penalized — only panics on the method's
+straight-line path count.
 
 </details>
 

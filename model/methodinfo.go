@@ -14,12 +14,17 @@ type MethodInfo struct {
 	Params               []*ParamInfo
 	Returns              []*ReturnInfo
 	HasPanic             bool
-	IsNoop               bool
-	CallsSuper           bool // calls embedded method
-	TypeSwitchCount      int
-	TypeAssertCount      int
-	ReflectUsageCount    int
-	StmtCount            int // total statements for density calculation
+	// HasUnconditionalPanic is true when the method panics on its straight-line
+	// path (not merely inside an argument/state guard). This is the signal LSP
+	// uses, since a guard panic is idiomatic fail-fast rather than a
+	// substitutability violation.
+	HasUnconditionalPanic bool
+	IsNoop                bool
+	CallsSuper            bool // calls embedded method
+	TypeSwitchCount       int
+	TypeAssertCount       int
+	ReflectUsageCount     int
+	StmtCount             int // total statements for density calculation
 }
 
 // ParamInfo represents a function/method parameter.
