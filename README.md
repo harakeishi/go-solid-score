@@ -225,7 +225,9 @@ go-solid-score diff --base base.json -f markdown ./... > comment.md
 
 Targets are matched by their stable `id`, so renames and file moves do not
 produce false regressions. Each target is classified as REGRESSED, IMPROVED,
-UNCHANGED, NEW, NEW-LOW, or REMOVED.
+UNCHANGED, NEW, NEW-LOW, or REMOVED. For targets that changed, the per-principle
+breakdown (e.g. `OCP 100.0->70.0 (-30.0)`) is shown alongside the total so you
+can tell *which* principle moved and what to fix.
 
 The stable `id` requires a resolvable package import path; for code that does
 not type-check (unresolved packages), the `id` falls back to a file-based key

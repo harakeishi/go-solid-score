@@ -3,15 +3,33 @@
 // new-low, or removed. The core Diff function is pure: it performs no I/O.
 package differ
 
-import "math"
+import (
+	"math"
+	"sort"
+)
 
 // Snapshot is the minimal projection of a scored target needed for diffing.
+// Principles holds the per-principle scores (keyed "SRP", "OCP", ...) so the
+// diff can explain which principle moved, not just the aggregate total. It may
+// be nil for baselines that predate per-principle output.
 type Snapshot struct {
-	ID      string
-	Name    string
-	Package string
-	Total   float64
+	ID         string
+	Name       string
+	Package    string
+	Total      float64
+	Principles map[string]float64
 }
+
+// PrincipleDelta records the change in one principle's score between base and
+// head for a target present in both.
+type PrincipleDelta struct {
+	Principle string
+	Base      float64
+	Head      float64
+}
+
+// Delta returns Head - Base for the principle.
+func (d PrincipleDelta) Delta() float64 { return d.Head - d.Base }
 
 // Status is the classification of a target between base and head.
 type Status string
@@ -34,6 +52,10 @@ type Entry struct {
 	Status  Status
 	Base    *float64
 	Head    *float64
+	// PrincipleDeltas lists the per-principle score changes for targets present
+	// in both base and head. Only principles whose score changed are included,
+	// sorted by principle name. Empty when a side lacks per-principle data.
+	PrincipleDeltas []PrincipleDelta
 }
 
 // Diff returns the head total minus the base total. Only meaningful when both
@@ -91,6 +113,7 @@ func Diff(base, head []Snapshot, opts Options) Report {
 			default:
 				e.Status = StatusUnchanged
 			}
+			e.PrincipleDeltas = principleDeltas(b.Principles, h.Principles)
 		} else {
 			if opts.MinScore > 0 && h.Total < opts.MinScore {
 				e.Status = StatusNewLow
@@ -114,4 +137,26 @@ func Diff(base, head []Snapshot, opts Options) Report {
 
 	r.Regressed = r.Counts[StatusRegressed] > 0 || r.Counts[StatusNewLow] > 0
 	return r
+}
+
+// principleDeltas returns the per-principle changes between base and head,
+// including only principles whose score actually changed, sorted by principle
+// name. Returns nil when either side lacks per-principle data, so callers can
+// gracefully omit the breakdown for older baselines.
+func principleDeltas(base, head map[string]float64) []PrincipleDelta {
+	if len(base) == 0 || len(head) == 0 {
+		return nil
+	}
+	var deltas []PrincipleDelta
+	for p, hv := range head {
+		bv, ok := base[p]
+		if !ok || bv == hv {
+			continue
+		}
+		deltas = append(deltas, PrincipleDelta{Principle: p, Base: bv, Head: hv})
+	}
+	sort.Slice(deltas, func(i, j int) bool {
+		return deltas[i].Principle < deltas[j].Principle
+	})
+	return deltas
 }

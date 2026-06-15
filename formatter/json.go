@@ -20,6 +20,12 @@ type JSONOutput struct {
 
 // JSONResult is one scored target in JSON form. The stable id/package fields
 // make it suitable as a diff baseline.
+//
+// The per-principle scores are pointers so that a baseline produced before
+// per-principle output existed (where these keys are simply absent) decodes to
+// nil rather than a misleading 0.0 — letting consumers distinguish "score was
+// zero" from "no per-principle data". JSONFormatter always populates them, so
+// freshly emitted JSON still carries every principle.
 type JSONResult struct {
 	// ID is the stable identifier (package path + name) for diffing scores
 	// across runs; it is unaffected by file renames or moves.
@@ -28,13 +34,36 @@ type JSONResult struct {
 	Package    string             `json:"package"`
 	File       string             `json:"file"`
 	Line       int                `json:"line"`
-	SRP        float64            `json:"srp"`
-	OCP        float64            `json:"ocp"`
-	LSP        float64            `json:"lsp"`
-	ISP        float64            `json:"isp"`
-	DIP        float64            `json:"dip"`
+	SRP        *float64           `json:"srp"`
+	OCP        *float64           `json:"ocp"`
+	LSP        *float64           `json:"lsp"`
+	ISP        *float64           `json:"isp"`
+	DIP        *float64           `json:"dip"`
 	Total      float64            `json:"total"`
 	Confidence map[string]float64 `json:"confidence"`
+}
+
+// Principles projects the per-principle scores into a map keyed by principle
+// name, including only the principles that are present (non-nil). Returns nil
+// when none are present, so callers can detect a baseline that lacks
+// per-principle data.
+func (r JSONResult) Principles() map[string]float64 {
+	m := make(map[string]float64, 5)
+	for name, v := range map[string]*float64{
+		string(analyzer.SRP): r.SRP,
+		string(analyzer.OCP): r.OCP,
+		string(analyzer.LSP): r.LSP,
+		string(analyzer.ISP): r.ISP,
+		string(analyzer.DIP): r.DIP,
+	} {
+		if v != nil {
+			m[name] = *v
+		}
+	}
+	if len(m) == 0 {
+		return nil
+	}
+	return m
 }
 
 // JSONSummary is the aggregate block of the JSON document.
@@ -54,17 +83,21 @@ func (f *JSONFormatter) Format(results []*scorer.ScoreResult) (string, error) {
 		for p, c := range r.Confidence {
 			conf[string(p)] = c
 		}
+		score := func(p analyzer.Principle) *float64 {
+			v := r.Scores[p]
+			return &v
+		}
 		jr := JSONResult{
 			ID:         r.TargetID(),
 			Name:       r.TargetName,
 			Package:    r.TargetPkg,
 			File:       r.TargetFile,
 			Line:       r.TargetLine,
-			SRP:        r.Scores[analyzer.SRP],
-			OCP:        r.Scores[analyzer.OCP],
-			LSP:        r.Scores[analyzer.LSP],
-			ISP:        r.Scores[analyzer.ISP],
-			DIP:        r.Scores[analyzer.DIP],
+			SRP:        score(analyzer.SRP),
+			OCP:        score(analyzer.OCP),
+			LSP:        score(analyzer.LSP),
+			ISP:        score(analyzer.ISP),
+			DIP:        score(analyzer.DIP),
 			Total:      r.Total,
 			Confidence: conf,
 		}
