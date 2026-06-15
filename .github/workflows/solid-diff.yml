@@ -1,0 +1,59 @@
+name: solid-score-diff
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  diff:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      # Build the tool from this checkout so the workflow always matches the
+      # code under review. (External users can instead
+      # `go install github.com/harakeishi/go-solid-score@latest` and drop the
+      # ./gss path prefix below.)
+      - name: Build go-solid-score
+        run: go build -o "$RUNNER_TEMP/gss" .
+
+      - name: Score base (PR base commit)
+        env:
+          # base.sha is a commit SHA (hex), but pass it via env and quote it
+          # rather than interpolating into the shell, per Actions best practice.
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          # Analyze the base commit's source with the freshly built binary, so
+          # the base does not need to contain the tool itself.
+          git worktree add /tmp/base "$BASE_SHA"
+          (cd /tmp/base && "$RUNNER_TEMP/gss" -f json ./...) > base.json
+
+      - name: Diff against base
+        run: |
+          "$RUNNER_TEMP/gss" diff --base base.json -f markdown ./... > comment.md
+          "$RUNNER_TEMP/gss" diff --base base.json ./...  # human-readable log
+
+      # Same-repo PRs have a write token: post (and update) a sticky comment.
+      - name: Comment on PR
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: go-solid-score-diff
+          path: comment.md
+
+      # Fork PRs run with a read-only token, so commenting would 403. Fall back
+      # to the job summary, which is always writable. (Do NOT switch to
+      # pull_request_target — that would run untrusted fork code with a write
+      # token.)
+      - name: Report to job summary (fork PRs)
+        if: github.event.pull_request.head.repo.full_name != github.repository
+        run: cat comment.md >> "$GITHUB_STEP_SUMMARY"

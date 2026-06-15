@@ -36,6 +36,8 @@ func newRootCmd() *cobra.Command {
 	cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Show detailed breakdown per struct")
 	cmd.Version = version
 
+	cmd.AddCommand(newDiffCmd())
+
 	return cmd
 }
 
@@ -66,27 +68,9 @@ func run(cmd *cobra.Command, args []string) error {
 		patterns = args
 	}
 
-	// Parse
-	pkgs, err := parser.Parse(patterns)
+	allResults, err := analyze(cfg, patterns)
 	if err != nil {
-		return fmt.Errorf("parsing packages: %w", err)
-	}
-
-	// Build analyzers
-	analyzers := []analyzer.Analyzer{
-		analyzer.NewSRPAnalyzer(),
-		analyzer.NewOCPAnalyzer(),
-		analyzer.NewLSPAnalyzer(),
-		analyzer.NewISPAnalyzer(),
-		analyzer.NewDIPAnalyzer(cfg.DIP.Whitelist),
-	}
-
-	// Score
-	s := scorer.New(analyzers, cfg.Weights)
-	var allResults []*scorer.ScoreResult
-	for _, pkg := range pkgs {
-		results := s.Score(pkg)
-		allResults = append(allResults, results...)
+		return err
 	}
 
 	// Format
@@ -116,4 +100,28 @@ func run(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+// analyze parses the given patterns and scores every target, applying the
+// scoring rules from cfg. It is the shared core used by both `run` and `diff`.
+func analyze(cfg *config.Config, patterns []string) ([]*scorer.ScoreResult, error) {
+	pkgs, err := parser.Parse(patterns)
+	if err != nil {
+		return nil, fmt.Errorf("parsing packages: %w", err)
+	}
+
+	analyzers := []analyzer.Analyzer{
+		analyzer.NewSRPAnalyzer(),
+		analyzer.NewOCPAnalyzer(),
+		analyzer.NewLSPAnalyzer(),
+		analyzer.NewISPAnalyzer(),
+		analyzer.NewDIPAnalyzer(cfg.DIP.Whitelist),
+	}
+
+	s := scorer.New(analyzers, cfg.Weights)
+	var allResults []*scorer.ScoreResult
+	for _, pkg := range pkgs {
+		allResults = append(allResults, s.Score(pkg)...)
+	}
+	return allResults, nil
 }
