@@ -105,9 +105,10 @@ func TestDIPAnalyzer_ConcreteCollection(t *testing.T) {
 }
 
 // TestDIPAnalyzer_NoOwnedDependencies verifies that a type whose only
-// non-value dependency arrives as a method parameter (call-time data, not an
-// owned collaborator) is treated as DIP-not-applicable rather than penalized
-// to zero, and is reported with low confidence.
+// non-value dependency arrives as a concrete method parameter (call-time data,
+// not an owned collaborator) is scored neutrally with low confidence: not
+// penalized to zero (a DTO-taking method is not a false positive) and not
+// absolved at 100 (a concrete service coupling is not a false negative).
 func TestDIPAnalyzer_NoOwnedDependencies(t *testing.T) {
 	pkgs, err := parser.Parse([]string{"../testdata/dip"})
 	if err != nil {
@@ -119,13 +120,14 @@ func TestDIPAnalyzer_NoOwnedDependencies(t *testing.T) {
 
 	for _, r := range results {
 		if r.TargetName == "Printer" {
-			if r.Score < 80 {
-				t.Errorf("Printer DIP score %.1f should be >= 80 "+
-					"(method-param-only deps must not penalize DIP)", r.Score)
+			// Printer.Print(t *Tree) — concrete param, no owned deps.
+			if r.Score <= 0 || r.Score >= 80 {
+				t.Errorf("Printer DIP score %.1f should be neutral "+
+					"(method-param-only concrete dep: neither 0 nor 100)", r.Score)
 			}
 			if r.Confidence > analyzer.ConfidenceLowMedium {
 				t.Errorf("Printer DIP confidence %.2f should be low "+
-					"(DIP not applicable without owned dependencies)", r.Confidence)
+					"(DIP weakly applicable without owned dependencies)", r.Confidence)
 			}
 			return
 		}

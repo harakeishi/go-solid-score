@@ -39,6 +39,12 @@ const (
 	fieldDepWeight       = 1.0
 	constructorDepWeight = 1.0
 	paramDepWeight       = 0.3 // method params are less significant for DIP
+
+	// dipNeutralScore is the floor applied when a type has only call-time
+	// (method-parameter) dependencies and no owned (field/constructor) ones.
+	// Such a concrete parameter is ambiguous (a real collaborator vs. a data
+	// object), so the score is neither slammed to zero nor lifted to 100.
+	dipNeutralScore = 50.0
 )
 
 func (a *DIPAnalyzer) analyzeStruct(s *model.StructInfo, pkg *model.PackageInfo) Result {
@@ -88,26 +94,10 @@ func (a *DIPAnalyzer) analyzeStruct(s *model.StructInfo, pkg *model.PackageInfo)
 	}
 
 	// Structural dependencies (fields + constructor injection) are what a type
-	// *owns* and is the proper subject of DIP. If a type owns no collaborators,
-	// DIP is not structurally meaningful: method parameters are call-time data
-	// inputs supplied by the caller, and on their own should not drive the
-	// score to zero (e.g. a Formatter whose only "dependency" is the *Entry it
-	// formats). Method parameters therefore only refine the score when at least
-	// one structural dependency exists.
-	//
-	// "Not applicable" is reported as the default top score with low
-	// confidence: a type that owns no concrete dependency vacuously satisfies
-	// DIP, and the low confidence flags that the value is not a meaningful
-	// signal. This mirrors how a dependency-free struct is scored. (Note: the
-	// aggregate total does not currently weigh by confidence, so such a type
-	// contributes a high DIP to summaries — see docs/scoring-analysis.md.)
-	if dw.total == 0 {
-		r.Confidence = ConfidenceLow
-		r.Details = append(r.Details, "no owned dependencies (fields/constructor); DIP not applicable (not penalized)")
-		return r
-	}
+	// *owns* and is the proper subject of DIP.
+	structuralTotal := dw.total
 
-	// Analyze exported method parameters (low weight - call-time dependencies)
+	// Analyze exported method parameters (low weight - call-time dependencies).
 	for _, m := range s.Methods {
 		if !m.IsExported {
 			continue
@@ -125,8 +115,40 @@ func (a *DIPAnalyzer) analyzeStruct(s *model.StructInfo, pkg *model.PackageInfo)
 		}
 	}
 
-	// Score based on weighted interface dependency ratio
+	// No dependencies at all: the type owns nothing concrete and takes nothing
+	// concrete, so it vacuously satisfies DIP. Report the top score but with low
+	// confidence to flag that the value is not a meaningful signal.
+	if dw.total == 0 {
+		r.Confidence = ConfidenceLow
+		r.Details = append(r.Details, "no dependencies; DIP not applicable")
+		return r
+	}
+
 	ratio := dw.iface / dw.total
+
+	// Only call-time (method-parameter) dependencies, no owned ones. A concrete
+	// method parameter is ambiguous: it may be a genuine collaborator
+	// (Run(db *sql.DB) — a real concrete coupling worth flagging) or merely a
+	// data object the method operates on (Format(*Entry) — not a dependency to
+	// invert). Because the two are structurally indistinguishable, the ratio is
+	// floored at a neutral value with low confidence: this neither confidently
+	// penalizes a DTO-taking method to zero (a false positive) nor confidently
+	// absolves a concrete service coupling at 100 (a false negative). When the
+	// parameters are interfaces the ratio already lifts the score above neutral.
+	if structuralTotal == 0 {
+		r.Score = Clamp(ratio * 100)
+		if r.Score < dipNeutralScore {
+			r.Score = dipNeutralScore
+		}
+		r.Confidence = ConfidenceLow
+		r.Details = append(r.Details, "only call-time (method-parameter) dependencies; DIP weakly applicable")
+		for _, d := range concreteDeps {
+			r.Details = append(r.Details, "  - "+d)
+		}
+		return r
+	}
+
+	// Score based on weighted interface dependency ratio
 	r.Score = ratio * 100
 
 	// Bonus: if constructor accepts interfaces (dependency injection pattern)

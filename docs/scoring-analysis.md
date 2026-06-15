@@ -290,6 +290,51 @@ are *not* whitewashed: `gin.Context` 0→65, `gin.Engine` 0→25, `fasthttp.Requ
 methods mixed into their large surface. The `GodStruct` fixture (every method
 touches a field) is unchanged at 30.
 
+## Recall audit (are we now missing true positives?)
+
+Every change above *relaxes* a penalty, which raises a fair question: have the
+fixes traded false positives for **false negatives**? To check, a "golden" set
+of deliberate, uncontroversial violations — one per principle — was scored with
+the current build:
+
+| Injected violation | Principle | Score | Caught? |
+|--------------------|-----------|------:|:-------:|
+| `Service{ db *sql.DB; lgr *log.Logger }` | DIP | 0 | yes |
+| `Run(db *sql.DB, l *log.Logger)` (param-only) | DIP | 50 | yes (after fix) |
+| `Put()` panics `"not implemented"` (stub) | LSP | 80 | yes (−20) |
+| `Handle(any)` switches `case *A/*B` + `x.(*A)` | OCP | 70 | yes |
+| god struct, methods over disjoint fields | SRP | 30 | yes |
+| 12-method fat-interface implementer | ISP | 40 | yes |
+
+Five of the six were still caught immediately, confirming recall is intact for
+the canonical violations. The audit did surface **one real false negative** the
+relaxations had introduced.
+
+### DIP missed method-parameter-only concrete couplings
+
+The round-two DIP change reported a type with no owned (field/constructor)
+dependencies as "not applicable" at the top score (100). That correctly spared
+formatters whose only "dependency" is the data object they format
+(`Format(*Entry)`), but it also silently absolved a genuine concrete coupling
+such as `Run(db *sql.DB)`. The two are *structurally indistinguishable* — both
+are concrete method parameters — so neither extreme (0 or 100) is right.
+
+**Fix:** when a type has only call-time (method-parameter) dependencies, the
+interface ratio is now scored but **floored at a neutral 50 with low
+confidence**, instead of jumping to 100. `Run(db *sql.DB)` drops to 50 (below
+the default DIP threshold, so it is flagged), while a formatter taking a DTO
+also reads 50/low-confidence rather than a confident 0 — an honest "weakly
+applicable" verdict for an ambiguous signal. Owned concrete dependencies are
+unaffected (`Service` with `*sql.DB` fields still scores DIP 0). Across the 20
+libraries, ~10% of targets sit in this neutral band; formerly-inflated cases
+such as `logrus.JSONFormatter` move from DIP 100 to 50/low-confidence.
+
+The other relaxations were re-confirmed as safe by construction: LSP still flags
+unconditional panics (only guards are spared), OCP still flags concrete type
+switches and concrete downcasts (only interface feature-detection is spared),
+and SRP still fragments methods over disjoint fields (only stateless,
+field-free methods are spared).
+
 ## Future work
 
 - **SRP/LCOM4 calibration for large facade types.** The stateless-method
