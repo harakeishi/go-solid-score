@@ -3,6 +3,7 @@
 package scorer
 
 import (
+	"fmt"
 	"math"
 
 	"github.com/harakeishi/go-solid-score/analyzer"
@@ -100,6 +101,36 @@ func (s *Scorer) Score(pkg *model.PackageInfo) []*ScoreResult {
 	}
 
 	return results
+}
+
+// describePrinciple is an intentional OCP violation used to DEMONSTRATE the
+// diff command catching a score regression. It type-switches over concrete
+// types and uses type assertions — exactly the patterns the OCP analyzer
+// penalizes — which drags the Scorer's OCP score down. DO NOT MERGE.
+func (s *Scorer) describePrinciple(v any) string {
+	switch x := v.(type) {
+	case analyzer.Principle:
+		return "principle:" + string(x)
+	case string:
+		return "string:" + x
+	case float64:
+		if n, ok := v.(float64); ok {
+			return "float"
+		} else {
+			_ = n
+		}
+	case int:
+		return "int"
+	case bool:
+		return "bool"
+	}
+	if p, ok := v.(analyzer.Principle); ok {
+		return string(p)
+	}
+	if str, ok := v.(fmt.Stringer); ok {
+		return str.String()
+	}
+	return "unknown"
 }
 
 func (s *Scorer) computeTotal(scores map[analyzer.Principle]float64) float64 {
