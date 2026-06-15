@@ -183,6 +183,28 @@ Weights are configurable (see [Configuration](#configuration)). Zero-weighted pr
 
 </details>
 
+## Stable Target IDs (for score diffing)
+
+JSON output identifies each target by a stable `id` of the form
+`<package import path>.<TypeName>` (e.g. `github.com/foo/bar.MyStruct`), in
+addition to the human-facing `file` and `line`:
+
+```json
+{
+  "id": "github.com/foo/bar.MyStruct",
+  "name": "MyStruct",
+  "package": "github.com/foo/bar",
+  "file": "/abs/path/to/bar/mystruct.go",
+  "line": 10
+}
+```
+
+Because the `id` is derived from the import path rather than the absolute file
+path, it stays the same when a type is renamed-by-file or moved to another file
+within the same package. This makes it suitable as a join key when comparing
+two runs (e.g. a base commit vs. a PR) to detect score regressions, rather than
+relying on absolute paths that differ across machines and refactors.
+
 ## golangci-lint Integration
 
 go-solid-score can be used as a `go/analysis` plugin with golangci-lint:

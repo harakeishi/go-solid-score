@@ -29,6 +29,7 @@ func (a *ISPAnalyzer) Analyze(pkg *model.PackageInfo) []Result {
 func (a *ISPAnalyzer) analyzeStruct(s *model.StructInfo, pkg *model.PackageInfo) Result {
 	r := Result{
 		Principle:  ISP,
+		TargetPkg:  pkg.PkgPath,
 		TargetName: s.Name,
 		TargetFile: s.File,
 		TargetLine: s.Line,

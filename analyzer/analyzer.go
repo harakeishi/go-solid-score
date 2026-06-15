@@ -27,7 +27,12 @@ const (
 
 // Result holds the analysis output for one principle on one target.
 type Result struct {
-	Principle  Principle
+	Principle Principle
+	// TargetPkg is the import path of the package the target belongs to.
+	// It is used (together with TargetName) as a stable identity for the
+	// target that survives file renames and moves. TargetFile/TargetLine
+	// remain for human-facing display only.
+	TargetPkg  string
 	TargetName string
 	TargetFile string
 	TargetLine int

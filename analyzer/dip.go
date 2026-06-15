@@ -44,6 +44,7 @@ const (
 func (a *DIPAnalyzer) analyzeStruct(s *model.StructInfo, pkg *model.PackageInfo) Result {
 	r := Result{
 		Principle:  DIP,
+		TargetPkg:  pkg.PkgPath,
 		TargetName: s.Name,
 		TargetFile: s.File,
 		TargetLine: s.Line,

@@ -11,6 +11,10 @@ import (
 
 // ScoreResult holds SOLID scores for a single target (struct or function).
 type ScoreResult struct {
+	// TargetPkg is the import path of the package the target belongs to.
+	// Together with TargetName it forms the stable identity used to match
+	// the same target across runs (e.g. for diffing two commits).
+	TargetPkg  string
 	TargetName string
 	TargetFile string
 	TargetLine int
@@ -18,6 +22,17 @@ type ScoreResult struct {
 	Total      float64
 	Confidence map[analyzer.Principle]float64
 	Details    map[analyzer.Principle][]string
+}
+
+// TargetID returns the stable identifier for this target: the package import
+// path joined with the target name (e.g. "github.com/foo/bar.MyStruct").
+// It is independent of the absolute file path, so it survives file renames
+// and moves within the same package — making it suitable as a diff key.
+func (r *ScoreResult) TargetID() string {
+	if r.TargetPkg == "" {
+		return r.TargetName
+	}
+	return r.TargetPkg + "." + r.TargetName
 }
 
 // Scorer orchestrates all SOLID analyzers and computes weighted totals.
@@ -42,10 +57,17 @@ func (s *Scorer) Score(pkg *model.PackageInfo) []*ScoreResult {
 	for _, a := range s.Analyzers {
 		results := a.Analyze(pkg)
 		for _, r := range results {
-			key := r.TargetFile + ":" + r.TargetName
+			// Identify a target by its package path + name so that the same
+			// target maps to the same key even if its source file is renamed
+			// or moved. Fall back to file path when no package path is known.
+			key := r.TargetPkg + "." + r.TargetName
+			if r.TargetPkg == "" {
+				key = r.TargetFile + ":" + r.TargetName
+			}
 			sr, ok := resultsByTarget[key]
 			if !ok {
 				sr = &ScoreResult{
+					TargetPkg:  r.TargetPkg,
 					TargetName: r.TargetName,
 					TargetFile: r.TargetFile,
 					TargetLine: r.TargetLine,

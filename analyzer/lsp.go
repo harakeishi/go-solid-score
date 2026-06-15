@@ -25,6 +25,7 @@ func (a *LSPAnalyzer) Analyze(pkg *model.PackageInfo) []Result {
 func (a *LSPAnalyzer) analyzeStruct(s *model.StructInfo, pkg *model.PackageInfo) Result {
 	r := Result{
 		Principle:  LSP,
+		TargetPkg:  pkg.PkgPath,
 		TargetName: s.Name,
 		TargetFile: s.File,
 		TargetLine: s.Line,

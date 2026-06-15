@@ -66,6 +66,79 @@ func TestScorer_EmptyPackage(t *testing.T) {
 	}
 }
 
+// TestScorer_StableKeyAcrossFileMove verifies that two analyzers reporting the
+// same target (same package + name) are merged even when they disagree on the
+// source file path — as happens when a type is moved to a different file
+// between commits. This is the property that makes scores diff-able.
+func TestScorer_StableKeyAcrossFileMove(t *testing.T) {
+	analyzers := []analyzer.Analyzer{
+		&stubAnalyzer{
+			principle: analyzer.SRP,
+			results: []analyzer.Result{{
+				Principle: analyzer.SRP, TargetPkg: "example.com/pkg", TargetName: "Foo",
+				TargetFile: "old.go", Score: 100,
+			}},
+		},
+		&stubAnalyzer{
+			principle: analyzer.DIP,
+			results: []analyzer.Result{{
+				Principle: analyzer.DIP, TargetPkg: "example.com/pkg", TargetName: "Foo",
+				TargetFile: "new.go", Score: 0,
+			}},
+		},
+	}
+
+	s := scorer.New(analyzers, config.DefaultWeights())
+	results := s.Score(&model.PackageInfo{Name: "pkg", PkgPath: "example.com/pkg"})
+
+	if len(results) != 1 {
+		t.Fatalf("expected 1 merged result despite differing files, got %d", len(results))
+	}
+	r := results[0]
+	if r.TargetID() != "example.com/pkg.Foo" {
+		t.Errorf("expected TargetID example.com/pkg.Foo, got %s", r.TargetID())
+	}
+	if _, ok := r.Scores[analyzer.SRP]; !ok {
+		t.Error("expected SRP score to be present on merged result")
+	}
+	if _, ok := r.Scores[analyzer.DIP]; !ok {
+		t.Error("expected DIP score to be present on merged result")
+	}
+}
+
+// TestScorer_DistinctPackagesSameNameNotMerged verifies that two types with the
+// same name in different packages are NOT collapsed into one target.
+func TestScorer_DistinctPackagesSameNameNotMerged(t *testing.T) {
+	mk := func(pkgPath string) analyzer.Analyzer {
+		return &stubAnalyzer{
+			principle: analyzer.SRP,
+			results: []analyzer.Result{{
+				Principle: analyzer.SRP, TargetPkg: pkgPath, TargetName: "Handler",
+				TargetFile: "h.go", Score: 90,
+			}},
+		}
+	}
+
+	s := scorer.New(nil, config.DefaultWeights())
+	s.Analyzers = []analyzer.Analyzer{mk("example.com/a")}
+	resA := s.Score(&model.PackageInfo{PkgPath: "example.com/a"})
+	s.Analyzers = []analyzer.Analyzer{mk("example.com/b")}
+	resB := s.Score(&model.PackageInfo{PkgPath: "example.com/b"})
+
+	if resA[0].TargetID() == resB[0].TargetID() {
+		t.Errorf("expected distinct IDs for same-named types in different packages, both were %s", resA[0].TargetID())
+	}
+}
+
+// TestScoreResult_TargetIDFallback verifies the fallback to bare name when no
+// package path is available (e.g. unresolved package).
+func TestScoreResult_TargetIDFallback(t *testing.T) {
+	r := &scorer.ScoreResult{TargetName: "Foo"}
+	if got := r.TargetID(); got != "Foo" {
+		t.Errorf("expected fallback TargetID Foo, got %s", got)
+	}
+}
+
 func TestScorer_MultipleStructs(t *testing.T) {
 	analyzers := []analyzer.Analyzer{
 		&stubAnalyzer{
