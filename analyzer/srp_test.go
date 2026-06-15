@@ -49,3 +49,27 @@ func TestSRPAnalyzer_Bad(t *testing.T) {
 	}
 	t.Error("GodStruct not found in results")
 }
+
+// TestSRPAnalyzer_StatelessConventionMethod verifies that a method which
+// accesses no receiver field (e.g. an errors.Is convention method) does not
+// fragment LCOM4 and penalize an otherwise cohesive type.
+func TestSRPAnalyzer_StatelessConventionMethod(t *testing.T) {
+	pkgs, err := parser.Parse([]string{"../testdata/srp"})
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+
+	a := analyzer.NewSRPAnalyzer()
+	results := a.Analyze(pkgs[0])
+
+	for _, r := range results {
+		if r.TargetName == "ParseError" {
+			if r.Score < 100 {
+				t.Errorf("ParseError SRP score %.1f should be 100 "+
+					"(a stateless Is method must not fragment LCOM4)", r.Score)
+			}
+			return
+		}
+	}
+	t.Error("ParseError not found in results")
+}

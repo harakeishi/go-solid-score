@@ -22,3 +22,20 @@ func (t *TaxCalculator) CalculateWithDiscount(amount float64) float64 {
 func (t *TaxCalculator) EffectiveRate() float64 {
 	return t.rate * (1 - t.discount)
 }
+
+// ParseError is a cohesive error type. Its Error method uses the receiver's
+// field, while Is is a standard errors.Is convention method that only inspects
+// its argument and touches no field. The stateless Is method must not fragment
+// LCOM4 and drag SRP down — the type has a single responsibility.
+type ParseError struct {
+	msg string
+}
+
+func (e ParseError) Error() string {
+	return "parse error: " + e.msg
+}
+
+func (e ParseError) Is(target error) bool {
+	_, ok := target.(ParseError)
+	return ok
+}

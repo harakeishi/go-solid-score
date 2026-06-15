@@ -249,12 +249,61 @@ change this only relaxes penalties, so the `Router` fixture (which asserts to
 `gorilla/websocket` acts as a control: its assertions are downcasts to concrete
 types, so its OCP is unchanged — confirming the fix discriminates correctly.
 
+## Fourth validation round (SRP)
+
+A filesystem/util-heavy batch was analysed: `valyala/fasthttp`,
+`go-playground/validator`, `spf13/afero`, `BurntSushi/toml`, `robfig/cron`, and
+`google/uuid`. DIP/LSP/OCP held. The new signal was an **SRP/LCOM4** false
+positive, most visible in `afero` (mean SRP **51**) and on small error types.
+
+### LCOM4 was inflated by stateless methods
+
+`google/uuid`'s `URNPrefixError` scored `SRP = 60`. It has two methods:
+
+```go
+func (e URNPrefixError) Error() string { return ... e.prefix ... } // uses a field
+func (e URNPrefixError) Is(target error) bool {                    // uses NO field
+    _, ok := target.(URNPrefixError); return ok
+}
+```
+
+LCOM4 connects methods that share a field or call each other. `Is` is a standard
+`errors.Is` convention method that only inspects its *argument*, so it shares no
+field with `Error` and was counted as a second, disconnected "responsibility" —
+LCOM4 = 2, a −40 penalty. `spf13/afero` showed the same effect at scale: stateless
+adapters such as `OsFs` (an empty struct that forwards to the `os` package) have
+*no fields at all*, so every method was an isolated component and SRP cratered to
+~15 — even though a fieldless adapter has no field-cohesion to violate.
+
+**Fix:** a method that accesses no receiver field *and* is uncoupled from
+siblings is excluded from the LCOM4 component count. LCOM measures cohesion over
+fields, so a stateless method is outside the metric. This generalises a narrower
+pre-existing mitigation (which only spared fieldless structs with ≤5 methods).
+Genuine low cohesion is unaffected — methods over disjoint fields still
+fragment — and oversized types are still caught by the method-count penalty.
+
+Across all 20 libraries analysed so far, this changed **88 targets upward and 0
+downward**. Examples: `uuid.URNPrefixError` 60→100, `afero.OsFs` 15→85,
+`afero` mean SRP 51→84, json-iterator mean 77→89. Crucially, genuine god-objects
+are *not* whitewashed: `gin.Context` 0→65, `gin.Engine` 0→25, `fasthttp.Request`
+0→25 — still clearly penalised, just no longer floored at zero by the stateless
+methods mixed into their large surface. The `GodStruct` fixture (every method
+touches a field) is unchanged at 30.
+
 ## Future work
 
-- **SRP/LCOM4 calibration for large facade types.** Replace the flat `-70`
-  LCOM4 penalty with one graduated by the number of connected components
-  *relative to* method count, and/or lower confidence when a type is an obvious
-  aggregate, so respected facades are not flatly floored at 0.
+- **SRP/LCOM4 calibration for large facade types.** The stateless-method
+  exclusion (fourth round) lifted facades off an absolute 0, but types whose
+  *stateful* methods genuinely operate over disjoint fields (e.g. `gin.Engine`,
+  `fasthttp.Request`) still take the flat `-70` LCOM4 hit. A remaining
+  refinement is to graduate that penalty by the number of connected components
+  *relative to* method count, so a 3-of-40 split reads differently from a 3-of-5
+  split, and/or to lower confidence for obvious aggregates.
+- **ISP for externally-mandated interfaces.** `afero.File`/`Fs` implementers and
+  `zap.jsonEncoder` score low ISP for a wide public surface that is dictated by
+  a standard interface they must satisfy (os.File-like, `zapcore.Encoder`), not
+  by self-imposed bloat. Discounting ISP when a type's surface mirrors an
+  interface it implements would reduce these false positives.
 - **Confidence-aware aggregation / explicit N/A.** The aggregate `total` ignores
   per-principle confidence, so a DIP-not-applicable type (returned at 100 / low
   confidence) reads as a perfect DIP in summaries. Weighing the aggregate by

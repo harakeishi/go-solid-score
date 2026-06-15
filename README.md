@@ -95,6 +95,7 @@ Uses **LCOM4** (Lack of Cohesion of Methods) to measure struct cohesion.
 
 - Builds a graph where two methods are connected if they share a field or call each other
 - Counts connected components via BFS — more components = more responsibilities
+- A method that accesses **no** receiver field and is uncoupled from siblings (e.g. an `errors.Is`/`As` convention method, or a stateless adapter method) is excluded from the count: LCOM measures cohesion *over fields*, so a stateless method neither adds nor removes a data responsibility. Oversized types are still flagged by the method-count penalty below.
 
 | LCOM4 | Penalty |
 |-------|---------|
