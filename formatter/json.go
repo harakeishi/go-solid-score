@@ -11,12 +11,16 @@ import (
 // JSONFormatter outputs machine-readable JSON.
 type JSONFormatter struct{}
 
-type jsonOutput struct {
-	Results []jsonResult `json:"results"`
-	Summary jsonSummary  `json:"summary"`
+// JSONOutput is the top-level JSON document emitted by JSONFormatter and is
+// also the shape consumed when decoding a baseline for diffing.
+type JSONOutput struct {
+	Results []JSONResult `json:"results"`
+	Summary JSONSummary  `json:"summary"`
 }
 
-type jsonResult struct {
+// JSONResult is one scored target in JSON form. The stable id/package fields
+// make it suitable as a diff baseline.
+type JSONResult struct {
 	// ID is the stable identifier (package path + name) for diffing scores
 	// across runs; it is unaffected by file renames or moves.
 	ID         string             `json:"id"`
@@ -33,14 +37,15 @@ type jsonResult struct {
 	Confidence map[string]float64 `json:"confidence"`
 }
 
-type jsonSummary struct {
+// JSONSummary is the aggregate block of the JSON document.
+type JSONSummary struct {
 	TotalStructs int     `json:"total_structs"`
 	AverageScore float64 `json:"average_score"`
 }
 
 func (f *JSONFormatter) Format(results []*scorer.ScoreResult) (string, error) {
-	out := jsonOutput{
-		Results: make([]jsonResult, 0, len(results)),
+	out := JSONOutput{
+		Results: make([]JSONResult, 0, len(results)),
 	}
 
 	var totalSum float64
@@ -49,7 +54,7 @@ func (f *JSONFormatter) Format(results []*scorer.ScoreResult) (string, error) {
 		for p, c := range r.Confidence {
 			conf[string(p)] = c
 		}
-		jr := jsonResult{
+		jr := JSONResult{
 			ID:         r.TargetID(),
 			Name:       r.TargetName,
 			Package:    r.TargetPkg,
@@ -71,7 +76,7 @@ func (f *JSONFormatter) Format(results []*scorer.ScoreResult) (string, error) {
 	if len(results) > 0 {
 		avg = math.Round(totalSum/float64(len(results))*10) / 10
 	}
-	out.Summary = jsonSummary{
+	out.Summary = JSONSummary{
 		TotalStructs: len(results),
 		AverageScore: avg,
 	}
