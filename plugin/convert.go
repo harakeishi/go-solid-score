@@ -10,7 +10,8 @@ import (
 // PackageInfoFromPass constructs a model.PackageInfo from an analysis.Pass.
 func PackageInfoFromPass(pass *analysis.Pass) *model.PackageInfo {
 	pi := &model.PackageInfo{
-		Name: pass.Pkg.Name(),
+		Name:    pass.Pkg.Name(),
+		PkgPath: pass.Pkg.Path(),
 	}
 
 	structMap := make(map[string]*model.StructInfo)

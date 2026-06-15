@@ -17,7 +17,11 @@ type jsonOutput struct {
 }
 
 type jsonResult struct {
+	// ID is the stable identifier (package path + name) for diffing scores
+	// across runs; it is unaffected by file renames or moves.
+	ID         string             `json:"id"`
 	Name       string             `json:"name"`
+	Package    string             `json:"package"`
 	File       string             `json:"file"`
 	Line       int                `json:"line"`
 	SRP        float64            `json:"srp"`
@@ -46,7 +50,9 @@ func (f *JSONFormatter) Format(results []*scorer.ScoreResult) (string, error) {
 			conf[string(p)] = c
 		}
 		jr := jsonResult{
+			ID:         r.TargetID(),
 			Name:       r.TargetName,
+			Package:    r.TargetPkg,
 			File:       r.TargetFile,
 			Line:       r.TargetLine,
 			SRP:        r.Scores[analyzer.SRP],

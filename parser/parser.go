@@ -43,7 +43,8 @@ func Parse(patterns []string) ([]*model.PackageInfo, error) {
 
 func extractPackageInfo(pkg *packages.Package) *model.PackageInfo {
 	pi := &model.PackageInfo{
-		Name: pkg.Name,
+		Name:    pkg.Name,
+		PkgPath: pkg.PkgPath,
 	}
 	if len(pkg.GoFiles) > 0 {
 		pi.Dir = filepath.Dir(pkg.GoFiles[0])

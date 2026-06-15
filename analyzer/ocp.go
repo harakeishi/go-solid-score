@@ -17,14 +17,15 @@ func (a *OCPAnalyzer) Principle() Principle { return OCP }
 func (a *OCPAnalyzer) Analyze(pkg *model.PackageInfo) []Result {
 	var results []Result
 	for _, s := range pkg.Structs {
-		results = append(results, a.analyzeStruct(s))
+		results = append(results, a.analyzeStruct(s, pkg.PkgPath))
 	}
 	return results
 }
 
-func (a *OCPAnalyzer) analyzeStruct(s *model.StructInfo) Result {
+func (a *OCPAnalyzer) analyzeStruct(s *model.StructInfo, pkgPath string) Result {
 	r := Result{
 		Principle:  OCP,
+		TargetPkg:  pkgPath,
 		TargetName: s.Name,
 		TargetFile: s.File,
 		TargetLine: s.Line,

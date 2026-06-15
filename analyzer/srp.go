@@ -16,14 +16,15 @@ func (a *SRPAnalyzer) Principle() Principle { return SRP }
 func (a *SRPAnalyzer) Analyze(pkg *model.PackageInfo) []Result {
 	var results []Result
 	for _, s := range pkg.Structs {
-		results = append(results, a.analyzeStruct(s))
+		results = append(results, a.analyzeStruct(s, pkg.PkgPath))
 	}
 	return results
 }
 
-func (a *SRPAnalyzer) analyzeStruct(s *model.StructInfo) Result {
+func (a *SRPAnalyzer) analyzeStruct(s *model.StructInfo, pkgPath string) Result {
 	r := Result{
 		Principle:  SRP,
+		TargetPkg:  pkgPath,
 		TargetName: s.Name,
 		TargetFile: s.File,
 		TargetLine: s.Line,
