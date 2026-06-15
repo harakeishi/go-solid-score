@@ -128,7 +128,15 @@ func (w *bodyWalker) visit(n ast.Node) bool {
 			w.complexity++
 		}
 	case *ast.TypeAssertExpr:
-		w.typeAssertCount++
+		// node.Type == nil is the `x.(type)` form of a type switch, already
+		// accounted for by TypeSwitchStmt — don't double-count it. Assertions
+		// whose target is an interface are capability/feature detection (e.g.
+		// `w.(http.Flusher)`), an extensibility mechanism that is open for
+		// extension rather than an OCP smell; only concrete-type assertions
+		// (downcasts) are counted.
+		if node.Type != nil && !w.isInterfaceAssert(node.Type) {
+			w.typeAssertCount++
+		}
 	case *ast.SelectorExpr:
 		w.checkFieldAccess(node)
 		w.checkMethodCall(node)
@@ -179,6 +187,21 @@ func (w *bodyWalker) checkMethodCall(sel *ast.SelectorExpr) {
 			w.calledMethods = append(w.calledMethods, methodName)
 		}
 	}
+}
+
+// isInterfaceAssert reports whether a type-assertion target is an interface
+// type. When type information is unavailable it conservatively returns false,
+// so the assertion is still counted as a concrete downcast.
+func (w *bodyWalker) isInterfaceAssert(expr ast.Expr) bool {
+	if w.info == nil {
+		return false
+	}
+	t := w.info.TypeOf(expr)
+	if t == nil {
+		return false
+	}
+	_, ok := t.Underlying().(*types.Interface)
+	return ok
 }
 
 func (w *bodyWalker) checkReflectUsage(sel *ast.SelectorExpr) {

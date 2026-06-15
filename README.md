@@ -114,10 +114,15 @@ Detects code patterns that require modification when adding new types.
 | Pattern | Per Instance | Max Penalty |
 |---------|-------------|-------------|
 | Type switch | −15 | −40 |
-| Type assertion | −10 | −40 |
+| Type assertion (to a concrete type) | −10 | −40 |
 | Reflect usage | −5 | −20 |
 
 A density penalty applies if type-check statements exceed 15% (−10) or 30% (−20) of total statements. Interface parameters in methods earn a bonus (+5 each, max +20).
+
+Type assertions whose target is an **interface** (capability/feature detection,
+e.g. `if f, ok := w.(http.Flusher); ok { … }`) are *not* penalized: they are
+open for extension — a new type implementing the interface needs no change here
+— unlike a downcast to a concrete type, which is the OCP smell.
 
 </details>
 

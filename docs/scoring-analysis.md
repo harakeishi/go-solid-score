@@ -206,6 +206,49 @@ from a separate no-op heuristic, not the panic.
   discount ISP when a type's public surface is mandated by an interface it
   implements rather than self-imposed.
 
+## Third validation round (OCP)
+
+A further batch was analysed: `prometheus/client_golang`, `stretchr/testify`,
+`urfave/cli`, `gorilla/websocket`, `hashicorp/golang-lru`, and
+`json-iterator/go`. The DIP and LSP fixes held. The new signal was in **OCP**.
+
+### OCP penalised interface feature-detection
+
+Several well-regarded types scored low OCP not because they branch on concrete
+types, but because they use **comma-ok assertions to an interface** to detect an
+optional capability — the canonical extensible pattern:
+
+```go
+// prometheus/client_golang promhttp delegators
+if p, ok := w.(http.Pusher); ok { ... }   // pusherDelegator
+// gorilla/websocket
+if d, ok := dialer.(proxy.ContextDialer); ok { ... }
+```
+
+Adding a new type that implements the asserted interface requires **no change**
+to this code, so it is open for extension — the opposite of an OCP violation.
+The analyzer was counting every `x.(T)` the same, regardless of whether `T` is
+an interface (feature detection) or a concrete type (a downcast, the real OCP
+smell).
+
+**Fix:** the walker now counts only assertions whose target is a *concrete*
+type. Interface-target assertions are ignored, and the `x.(type)` form of a type
+switch is no longer double-counted alongside the switch itself. As with the LSP
+change this only relaxes penalties, so the `Router` fixture (which asserts to
+`string`/`int`) still scores low. Mean OCP and notable recoveries:
+
+| Library | OCP mean | Notable recoveries (concrete asserts stay penalised) |
+|---------|---------:|------------------------------------------------------|
+| client_golang | 97.2 → 99.2 | `pusherDelegator`/`hijackerDelegator` 70 → 100 |
+| testify | 90.4 → 94.8 | `Mock` 70 → 100 |
+| cli | 93.4 → 96.9 | `FlagBase` 20 → 60 |
+| viper | 95.6 → 97.9 | `Viper` 25 → 65 (concrete config type-switches remain) |
+| json-iterator | 97.7 → 98.9 | `anyCodec` 70 → 100 |
+| websocket | 100 → 100 | unchanged — its asserts are concrete (`*CloseError`) |
+
+`gorilla/websocket` acts as a control: its assertions are downcasts to concrete
+types, so its OCP is unchanged — confirming the fix discriminates correctly.
+
 ## Future work
 
 - **SRP/LCOM4 calibration for large facade types.** Replace the flat `-70`
