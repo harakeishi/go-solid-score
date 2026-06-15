@@ -64,17 +64,50 @@ func (a *SRPAnalyzer) analyzeStruct(s *model.StructInfo, pkgPath string) Result 
 		r.Confidence = ConfidenceMedium
 	}
 
-	// Compute LCOM4
+	// Compute LCOM4 and convert the cohesion deficit into a penalty.
 	lcom4 := calculateLCOM4(methods)
-	switch {
-	case lcom4 <= 1:
-		// fully cohesive
-	case lcom4 == 2:
-		r.Score -= 40
-		r.Details = append(r.Details, fmt.Sprintf("LCOM4=%d: struct has %d disconnected responsibility groups", lcom4, lcom4))
-	default:
-		r.Score -= 70
-		r.Details = append(r.Details, fmt.Sprintf("LCOM4=%d: struct has %d disconnected responsibility groups", lcom4, lcom4))
+	if lcom4 >= 2 {
+		// Base penalty for the cohesion deficit: the larger the LCOM4, the more
+		// disconnected responsibility groups the struct splits into.
+		base := 40.0
+		if lcom4 >= 3 {
+			base = 70.0
+		}
+
+		// Graduate the penalty by average component size (methods per group).
+		// The same LCOM4 means very different things at different sizes: two
+		// groups among 3 methods is genuine fragmentation — most methods are
+		// islands — whereas two groups among 70 methods is a large aggregate
+		// whose methods cluster into a couple of cohesive areas (the facade
+		// pattern: cobra.Command, gin.Engine, fasthttp.Request, logrus.Logger).
+		// LCOM4 counts the groups but not their size, so a flat penalty floors
+		// big structured aggregates on the same evidence that flags a small
+		// bag of unrelated methods. The classic SRP smell is *many small*
+		// disconnected pieces, so we attenuate as the average group grows.
+		// Oversized aggregates are still caught by the method-count and
+		// complexity penalties below; this only stops the cohesion term from
+		// double-counting size.
+		avgComp := float64(len(methods)) / float64(lcom4)
+		const loSize, hiSize, minAtten = 3.0, 10.0, 0.25
+		atten := 1.0
+		switch {
+		case avgComp >= hiSize:
+			atten = minAtten
+		case avgComp > loSize:
+			atten = 1.0 - (avgComp-loSize)/(hiSize-loSize)*(1.0-minAtten)
+		}
+
+		penalty := base * atten
+		r.Score -= penalty
+		r.Details = append(r.Details, fmt.Sprintf(
+			"LCOM4=%d over %d methods (avg %.1f methods/group): -%.0f cohesion penalty",
+			lcom4, len(methods), avgComp, penalty))
+
+		// A large structured aggregate is a weaker SRP signal than a small
+		// fragmented type; mark the reduced certainty when we attenuate.
+		if atten < 1.0 && r.Confidence > ConfidenceMedium {
+			r.Confidence = ConfidenceMedium
+		}
 	}
 
 	// Penalty: total cyclomatic complexity

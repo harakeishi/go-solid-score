@@ -97,11 +97,24 @@ Uses **LCOM4** (Lack of Cohesion of Methods) to measure struct cohesion.
 - Counts connected components via BFS — more components = more responsibilities
 - A method that accesses **no** receiver field and is uncoupled from siblings (e.g. an `errors.Is`/`As` convention method, or a stateless adapter method) is excluded from the count: LCOM measures cohesion *over fields*, so a stateless method neither adds nor removes a data responsibility. Oversized types are still flagged by the method-count penalty below.
 
-| LCOM4 | Penalty |
-|-------|---------|
-| ≤ 1   | None    |
-| 2     | −40     |
-| ≥ 3   | −70     |
+| LCOM4 | Base penalty |
+|-------|--------------|
+| ≤ 1   | None         |
+| 2     | −40          |
+| ≥ 3   | −70          |
+
+The cohesion penalty is **graduated by average component size** (methods ÷
+LCOM4). LCOM4 counts how many disconnected method groups a struct splits into,
+but the same count means very different things at different sizes: two groups
+among 3 methods is genuine fragmentation (most methods are islands), whereas two
+groups among 70 methods is a large aggregate whose methods cluster into a couple
+of cohesive areas — the facade pattern (`cobra.Command`, `gin.Engine`,
+`fasthttp.Request`, `logrus.Logger`). Because the classic SRP smell is *many
+small* disconnected pieces, the base penalty is attenuated toward 25% as the
+average group grows from 3 to ≥10 methods, and confidence is lowered to mark the
+weaker signal. Small fragmented types take the full penalty; large structured
+aggregates are still kept below the SRP threshold by the method-count and
+complexity penalties below, but are no longer floored.
 
 Additional penalties: cyclomatic complexity > 20 (−10) or > 40 (−20), method count > 10 (−5) or > 15 (−15).
 

@@ -335,15 +335,85 @@ switches and concrete downcasts (only interface feature-detection is spared),
 and SRP still fragments methods over disjoint fields (only stateless,
 field-free methods are spared).
 
+## Fifth validation round (SRP/LCOM4 graduation for facades)
+
+The first item in Future work below — graduating the LCOM4 penalty by component
+count *relative to* method count — was the clearest remaining false positive, so
+it was tackled next. A fresh run over `cobra`, `gin`, `logrus`, `fasthttp`,
+`bbolt`, and `zap` (with the LCOM4 component count and method count instrumented)
+made the pattern precise.
+
+### The same LCOM4 means opposite things at different sizes
+
+The facades the doc kept flagging do **not** have a high LCOM4 — most have
+`LCOM4 = 2`. What floors them is that the flat per-LCOM4 penalty stacks on top of
+the (legitimate) method-count and complexity penalties:
+
+| Type | methods | LCOM4 | avg methods/group | old SRP |
+|------|--------:|------:|------------------:|--------:|
+| `cobra.Command` | 154 | 2 | 77.0 | 25 |
+| `fasthttp.Request` | 73 | 2 | 36.5 | 25 |
+| `logrus.Logger` | 62 | 3 | 20.7 | 0 |
+| `gin.Engine` | 33 | 2 | 16.5 | 25 |
+| `gin.LogFormatterParams` | 5 | 4 | 1.25 | 20 |
+| `bbolt.Inode` | 8 | 4 | 2.0 | 30 |
+| `GodStruct` (fixture) | 8 | 5 | 1.6 | 30 |
+
+The **average component size** (methods ÷ LCOM4) cleanly separates the two
+populations. A 2-of-73 split (`fasthttp.Request`) means 71 methods cluster into
+two cohesive areas — a deliberate aggregate; a 4-of-5 split
+(`LogFormatterParams`) means nearly every method is its own island — genuine
+fragmentation. LCOM4 counts the groups but ignores their size, so a flat penalty
+charges both alike. This is exactly "components relative to method count" from
+the old Future-work note.
+
+### Fix: graduate the cohesion penalty by average component size
+
+The LCOM4 penalty (−40 at 2, −70 at ≥3) is now multiplied by an attenuation
+factor that falls from `1.0` to `0.25` as the average group grows from 3 to ≥10
+methods (linear in between). Small fragmented types (avg ≤ 3) keep the full
+penalty; large structured aggregates are attenuated. When the penalty is
+attenuated, SRP confidence is dropped to *medium* to mark the weaker signal —
+the second half of the Future-work suggestion ("lower confidence for obvious
+aggregates"). The method-count and complexity penalties are left untouched: they
+are an independent, legitimate "this type is large/complex" signal and they keep
+the attenuated aggregates below the SRP threshold rather than whitewashing them.
+
+### Results
+
+Across the six libraries, **15 targets moved up and 0 down**; mean SRP rose on
+every library (e.g. `fasthttp` 85.4→87.3, `logrus` 71.4→75.7, `cobra`
+91.7→95.0). The facades land in an honest middle band instead of the floor:
+
+| Type | SRP before → after |
+|------|-------------------:|
+| `logrus.Logger` | 0 → 48 |
+| `cobra.Command` | 25 → 55 |
+| `gin.Engine` | 25 → 55 |
+| `fasthttp.Request`/`RequestCtx`/`Server`/`Response` | 25 → 55 |
+| `bbolt.Page` | 25 → 55 |
+| `zap.Logger` | 45 → 66 |
+
+Recall is intact: the genuinely fragmented types are **unchanged** —
+`GodStruct` fixture 30→30, `gin.LogFormatterParams` 20→20, `bbolt.Inode` 30→30 —
+because their average component size (1.25–2.0) is below the attenuation
+threshold. The facades still score 48–66 (below the default SRP threshold of
+60–65), so they remain flagged as large types; they are simply no longer floored
+at 0–25 by a cohesion metric that the size penalties were already accounting for.
+A regression test (`TestSRPAnalyzer_GraduatedLCOM4`) and a `LargeFacade` fixture
+(16 methods, LCOM4=2) lock in the separation between an attenuated aggregate and
+a fragmented bag of methods.
+
 ## Future work
 
-- **SRP/LCOM4 calibration for large facade types.** The stateless-method
-  exclusion (fourth round) lifted facades off an absolute 0, but types whose
-  *stateful* methods genuinely operate over disjoint fields (e.g. `gin.Engine`,
-  `fasthttp.Request`) still take the flat `-70` LCOM4 hit. A remaining
-  refinement is to graduate that penalty by the number of connected components
-  *relative to* method count, so a 3-of-40 split reads differently from a 3-of-5
-  split, and/or to lower confidence for obvious aggregates.
+- **SRP/LCOM4 — graduate by component *size*, not just count.** The fifth round
+  attenuates by average group size, which assumes each cohesive group is one
+  responsibility. A genuine god-object with two *large* independent blobs
+  (e.g. a request-half and response-half of 20 methods each) is attenuated like a
+  facade. The method-count/complexity penalties keep it below threshold, but a
+  sharper signal would weight a component by whether it is internally cohesive
+  (e.g. penalize when ≥2 components each exceed N methods *and* touch disjoint
+  field clusters).
 - **ISP for externally-mandated interfaces.** `afero.File`/`Fs` implementers and
   `zap.jsonEncoder` score low ISP for a wide public surface that is dictated by
   a standard interface they must satisfy (os.File-like, `zapcore.Encoder`), not
@@ -357,17 +427,14 @@ field-free methods are spared).
 - **ISP confidence for embedded/promoted methods.** Several large public
   surfaces come from interface embedding; verify these are scored via the
   decorator/adapter path rather than as bloated interfaces.
-- **Reproducibility.** Consider committing a small benchmark script that clones a
-  pinned set of libraries and prints the aggregate table above, so scoring
-  changes can be regression-checked against real-world code over time.
-
 ## Reproducing
 
+A committed harness clones a pinned (release-tagged) set of the libraries used
+above and prints the aggregate per-principle table plus each library's
+lowest-scoring types, so scoring changes can be regression-checked against
+real-world code over time:
+
 ```bash
-go build -o /tmp/gss .
-for repo in spf13/cobra gin-gonic/gin sirupsen/logrus; do
-  name=$(basename "$repo")
-  git clone --depth 1 "https://github.com/$repo.git" "/tmp/$name"
-  (cd "/tmp/$name" && /tmp/gss -f json ./...) > "/tmp/$name.json"
-done
+scripts/benchmark.sh              # full corpus
+scripts/benchmark.sh cobra gin    # subset by name
 ```
