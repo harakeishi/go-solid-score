@@ -94,9 +94,16 @@ func (a *DIPAnalyzer) analyzeStruct(s *model.StructInfo, pkg *model.PackageInfo)
 	// score to zero (e.g. a Formatter whose only "dependency" is the *Entry it
 	// formats). Method parameters therefore only refine the score when at least
 	// one structural dependency exists.
+	//
+	// "Not applicable" is reported as the default top score with low
+	// confidence: a type that owns no concrete dependency vacuously satisfies
+	// DIP, and the low confidence flags that the value is not a meaningful
+	// signal. This mirrors how a dependency-free struct is scored. (Note: the
+	// aggregate total does not currently weigh by confidence, so such a type
+	// contributes a high DIP to summaries — see docs/scoring-analysis.md.)
 	if dw.total == 0 {
 		r.Confidence = ConfidenceLow
-		r.Details = append(r.Details, "no owned dependencies (fields/constructor); DIP not applicable")
+		r.Details = append(r.Details, "no owned dependencies (fields/constructor); DIP not applicable (not penalized)")
 		return r
 	}
 
@@ -151,21 +158,26 @@ func (a *DIPAnalyzer) analyzeStruct(s *model.StructInfo, pkg *model.PackageInfo)
 //   - a whitelisted builtin/stdlib value type (incl. collections of them);
 //   - a function type (callback/strategy) — behavioral injection, neither a
 //     concrete coupling to invert nor an interface collaborator;
-//   - a value/data type (basic, slice, array, map, channel — including named
-//     aliases such as `type FieldMap map[string]any`) whose element is not an
-//     interface — these hold data, not collaborators;
+//   - a pure-data value type — one whose core element is a builtin basic type
+//     (int, string, map[string]string, named aliases like `type FieldMap
+//     map[string]string`, …). These hold data, not collaborators. A collection
+//     of structs (e.g. `[]*PaymentService`) is deliberately NOT skipped here:
+//     its element is a concrete collaborator and remains a concrete dependency;
 //   - a self-reference — recursive/tree structures are structural composition,
 //     not injected collaborators.
 //
 // Excluding these removes the dominant source of false-positive DIP penalties
 // observed on idiomatic Go types (config/aggregate structs full of value,
 // callback, and self-referential fields), without masking genuine concrete
-// dependencies such as `db *sql.DB`. A value container *of interfaces* (e.g.
-// `handlers []Handler`) is kept, since it is a genuine abstraction dependency.
+// dependencies such as `db *sql.DB` or `workers []*Worker`. A container *of
+// interfaces* (e.g. `handlers []Handler`) is kept as an abstraction dependency.
 func (a *DIPAnalyzer) skipDep(typeName string, isIface, isFunc, isValue bool, structName string) bool {
 	if isWhitelisted(typeName, a.userWhitelist) {
 		return true
 	}
+	// isFunc carries the precise (type-checked) answer; the string-prefix check
+	// is only a fallback for when type info is unavailable (info == nil) and the
+	// type name was rendered as "func(...)".
 	if isFunc || strings.HasPrefix(coreTypeName(typeName), "func(") {
 		return true
 	}

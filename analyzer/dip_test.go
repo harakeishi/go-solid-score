@@ -76,6 +76,34 @@ func TestDIPAnalyzer_RecursiveAggregate(t *testing.T) {
 	t.Error("Tree not found in results")
 }
 
+// TestDIPAnalyzer_ConcreteCollection verifies that a collection of a concrete
+// struct (e.g. []*stage) is still counted as a concrete dependency, so the
+// value-type exclusion does not silently drop genuine concrete collaborators.
+func TestDIPAnalyzer_ConcreteCollection(t *testing.T) {
+	pkgs, err := parser.Parse([]string{"../testdata/dip"})
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+
+	a := analyzer.NewDIPAnalyzer(nil)
+	results := a.Analyze(pkgs[0])
+
+	for _, r := range results {
+		if r.TargetName == "Pipeline" {
+			// `stages []*stage` is a collection of a concrete struct, i.e. a
+			// genuine concrete dependency. It must still be penalized — value
+			// containers (map[string]string) are excluded, concrete-struct
+			// containers are not.
+			if r.Score >= 80 {
+				t.Errorf("Pipeline DIP score %.1f should be < 80 "+
+					"([]*stage is a concrete collaborator dependency)", r.Score)
+			}
+			return
+		}
+	}
+	t.Error("Pipeline not found in results")
+}
+
 // TestDIPAnalyzer_NoOwnedDependencies verifies that a type whose only
 // non-value dependency arrives as a method parameter (call-time data, not an
 // owned collaborator) is treated as DIP-not-applicable rather than penalized

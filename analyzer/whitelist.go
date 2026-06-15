@@ -163,6 +163,12 @@ func coreTypeName(typeName string) string {
 // and linked aggregates, which are structural composition rather than
 // injected collaborators, so DIP should not treat them as dependencies to
 // invert.
+//
+// The comparison is on the bare type name only. coreTypeName does not strip
+// package qualifiers, so an unrelated external type such as "pkg.Tree" will
+// not false-match the local "Tree". The (rare) edge case left unhandled is a
+// generic type parameter whose name happens to equal structName; treating such
+// a field as a self-reference is an acceptable approximation here.
 func isSelfReference(typeName, structName string) bool {
 	return structName != "" && coreTypeName(typeName) == structName
 }

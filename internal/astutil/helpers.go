@@ -84,26 +84,23 @@ func IsFuncType(t types.Type) bool {
 	})
 }
 
-// IsValueType reports whether t is fundamentally a value/data type — a basic
-// type, slice, array, map, or channel — even when reached through pointers or
-// named via an alias (e.g. `type FieldMap map[string]any`). Such types model
-// data the struct holds, not a collaborator it calls into, so DIP excludes
-// them unless their element is itself an interface (handled by the caller via
-// IsInterfaceType). Struct and interface types are *not* value types.
+// IsValueType reports whether the *core element* of t — reached by unwrapping
+// pointers, slices, arrays, maps, and channels — is a basic (builtin) type.
+// This captures pure data fields such as int, string, []byte,
+// map[string]string, and named aliases like `type FieldMap map[string]string`,
+// which model data a struct holds rather than a collaborator it calls into, so
+// DIP excludes them.
+//
+// Crucially, a collection of a *struct* or *interface* (e.g. []*PaymentService
+// or []Handler) is NOT a value type: its element is a collaborator, so DIP
+// still weighs it — as a concrete dependency for structs, and (via
+// IsInterfaceType) as an abstraction for interfaces. This preserves the true
+// positive that an earlier, blanket "any slice/map is data" rule discarded.
 func IsValueType(t types.Type) bool {
-	for i := 0; i < 8; i++ {
-		p, ok := t.Underlying().(*types.Pointer)
-		if !ok {
-			break
-		}
-		t = p.Elem()
-	}
-	switch t.Underlying().(type) {
-	case *types.Basic, *types.Slice, *types.Array, *types.Map, *types.Chan:
-		return true
-	default:
-		return false
-	}
+	return unwrapElem(t, func(u types.Type) bool {
+		_, ok := u.(*types.Basic)
+		return ok
+	})
 }
 
 // unwrapElem peels pointer, slice, array, map (value), and channel wrappers

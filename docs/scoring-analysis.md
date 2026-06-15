@@ -97,13 +97,32 @@ All changes target the DIP false positives, which were the clearest defects.
    `map[string]int`, `chan error`, `[]*time.Time`, etc. are recognised as the
    whitelisted value type they hold.
 4. **DIP skips non-dependencies**: function types, self-references, and
-   value/data types whose element is not an interface. (`analyzer/dip.go`)
+   *pure-data* value types — those whose core element is a builtin basic type
+   (`map[string]string`, `[]byte`, named aliases like `FieldMap`). A collection
+   of a *struct* (e.g. `[]*Worker`) is **not** skipped: its element is a
+   concrete collaborator, so it remains a concrete dependency. A collection of
+   an *interface* (`[]Handler`) is kept as an abstraction dependency.
+   (`analyzer/dip.go`)
 5. **DIP treats method parameters as a refinement, not a basis**: when a type
    owns no structural (field/constructor) dependency, DIP is reported as
-   not-applicable (neutral score, low confidence) instead of penalised to zero.
+   *not applicable* instead of penalised to zero.
 
 Genuine concrete couplings are unaffected: the `BadService` fixture
-(`db *sql.DB`, `logger *log.Logger`) still scores DIP 0.
+(`db *sql.DB`, `logger *log.Logger`) still scores DIP 0, and a `[]*stage`
+collaborator collection is still penalised.
+
+### A note on "not applicable" and the aggregate
+
+A DIP-not-applicable type is returned at the default top score (100) with **low
+confidence (0.3)**: owning no concrete dependency vacuously satisfies DIP, and
+the low confidence marks the value as not a meaningful signal. This mirrors the
+pre-existing treatment of dependency-free structs. The caveat is that the
+aggregate `total` does **not** currently weigh by confidence, so such a type
+still contributes a high DIP to summaries — and part of the mean-DIP gains below
+comes from correcting former false *zeros* (e.g. formatters whose only "input"
+is a method parameter) up to this not-applicable 100. A future improvement is to
+weigh aggregates by confidence (or expose an explicit N/A marker) so that
+not-applicable does not read as a perfect score; see Future work.
 
 ## Results (after the fix)
 
@@ -111,23 +130,30 @@ Mean scores across all analysed targets per library:
 
 | Library | DIP before → after | Total before → after |
 |---------|-------------------:|---------------------:|
-| cobra   | 44.4 → **80.3** | 80.7 → **89.6** |
-| gin     | 72.7 → **89.7** | 87.0 → **91.2** |
-| logrus  | 28.5 → **82.9** | 68.7 → **82.5** |
+| cobra   | 44.4 → **68.9** | 80.7 → **86.8** |
+| gin     | 72.7 → **87.1** | 87.0 → **90.6** |
+| logrus  | 28.5 → **73.8** | 68.7 → **80.2** |
 
 Central types, before → after:
 
 | Type | DIP | Total |
 |------|----:|------:|
-| `cobra.Command` | 0 → 23 | 26.0 → 31.8 |
-| `gin.Engine` | 13 → 69 | 29.3 → 43.3 |
-| `gin.Context` | 17 → 49 | 28.7 → 36.8 |
+| `cobra.Command` | 0 → 20 | 26.0 → 30.9 |
+| `gin.Engine` | 13 → 47 | 29.3 → 37.7 |
+| `gin.Context` | 17 → 29 | 28.7 → 31.7 |
 | `logrus.Logger` | 13 → 82 | 28.4 → 45.5 |
-| `logrus.JSONFormatter` | 0 → 100 (low conf) | 71.3 → 96.3 |
+| `logrus.JSONFormatter` | 0 → 100 (low conf, N/A) | 71.3 → 96.3 |
+
+These numbers are deliberately *more conservative* than an earlier draft that
+excluded all slices/maps as data: counting concrete-struct collections (such as
+cobra's `[]*Command`/`[]*Group`) as concrete dependencies lowers some scores
+again, but avoids the false negative of silently dropping real concrete
+collaborators.
 
 The remaining lower totals on `cobra.Command`/`gin.Engine`/`gin.Context` are now
-driven by `SRP = 0` (the facade/LCOM4 effect), which is the next calibration
-target rather than a DIP artefact.
+driven partly by genuine concrete coupling and partly by `SRP = 0` (the
+facade/LCOM4 effect), which is the next calibration target rather than a DIP
+artefact.
 
 ## Future work
 
@@ -135,6 +161,11 @@ target rather than a DIP artefact.
   LCOM4 penalty with one graduated by the number of connected components
   *relative to* method count, and/or lower confidence when a type is an obvious
   aggregate, so respected facades are not flatly floored at 0.
+- **Confidence-aware aggregation / explicit N/A.** The aggregate `total` ignores
+  per-principle confidence, so a DIP-not-applicable type (returned at 100 / low
+  confidence) reads as a perfect DIP in summaries. Weighing the aggregate by
+  confidence, or exposing an explicit "N/A" marker that is excluded from the
+  average, would represent "not applicable" more honestly than a top score.
 - **ISP confidence for embedded/promoted methods.** Several large public
   surfaces come from interface embedding; verify these are scored via the
   decorator/adapter path rather than as bloated interfaces.

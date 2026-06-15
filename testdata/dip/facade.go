@@ -28,6 +28,25 @@ func (p *Printer) Print(t *Tree) string {
 	return t.Name
 }
 
+// stage is a concrete worker type used by Pipeline below.
+type stage struct {
+	name string
+}
+
+// Pipeline depends on a *collection of a concrete struct* (`[]*stage`). Unlike
+// a value container such as map[string]string, this is a genuine concrete
+// collaborator dependency and DIP should still penalize it (the stages are not
+// behind an interface).
+type Pipeline struct {
+	stages []*stage
+}
+
+func (p *Pipeline) Run() {
+	for _, s := range p.stages {
+		_ = s.name
+	}
+}
+
 func (t *Tree) Visit() {
 	if t.OnVisit != nil {
 		t.OnVisit(t)

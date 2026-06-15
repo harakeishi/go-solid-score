@@ -30,9 +30,9 @@ type ParamInfo struct {
 	// IsFunc reports whether the parameter's (unwrapped) type is a function
 	// type (callback/strategy) rather than a concrete collaborator.
 	IsFunc bool
-	// IsValue reports whether the parameter's type is fundamentally a
-	// value/data type (basic, slice, array, map, or channel) rather than a
-	// struct or interface collaborator.
+	// IsValue reports whether the parameter's core element type is a builtin
+	// basic type (pure data) rather than a struct/interface collaborator.
+	// Collections of structs or interfaces are not value types.
 	IsValue bool
 }
 
