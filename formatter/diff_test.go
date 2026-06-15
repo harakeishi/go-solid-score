@@ -70,11 +70,18 @@ func TestFormatDiffMarkdown(t *testing.T) {
 
 func TestFormatDiffJSON(t *testing.T) {
 	out := formatter.FormatDiffJSON(sampleReport())
+	type principle struct {
+		Principle string  `json:"principle"`
+		Base      float64 `json:"base"`
+		Head      float64 `json:"head"`
+		Diff      float64 `json:"diff"`
+	}
 	var parsed struct {
 		Results []struct {
-			ID     string  `json:"id"`
-			Status string  `json:"status"`
-			Diff   float64 `json:"diff"`
+			ID         string      `json:"id"`
+			Status     string      `json:"status"`
+			Diff       float64     `json:"diff"`
+			Principles []principle `json:"principles"`
 		} `json:"results"`
 		Summary struct {
 			Regressed bool `json:"regressed"`
@@ -86,17 +93,40 @@ func TestFormatDiffJSON(t *testing.T) {
 	if !parsed.Summary.Regressed {
 		t.Error("expected regressed=true in summary")
 	}
-	var foundReg bool
+	var foundReg, foundNewLow bool
 	for _, r := range parsed.Results {
-		if r.ID == "pkg.Reg" {
+		switch r.ID {
+		case "pkg.Reg":
 			foundReg = true
 			if r.Status != "REGRESSED" || r.Diff != -14 {
 				t.Errorf("pkg.Reg: status=%s diff=%v", r.Status, r.Diff)
+			}
+			// The per-principle breakdown must be present and correct.
+			want := []principle{
+				{Principle: "OCP", Base: 100, Head: 50, Diff: -50},
+				{Principle: "SRP", Base: 60, Head: 55, Diff: -5},
+			}
+			if len(r.Principles) != len(want) {
+				t.Fatalf("pkg.Reg principles: got %d, want %d: %+v", len(r.Principles), len(want), r.Principles)
+			}
+			for i, w := range want {
+				if r.Principles[i] != w {
+					t.Errorf("pkg.Reg principles[%d]: got %+v, want %+v", i, r.Principles[i], w)
+				}
+			}
+		case "pkg.New":
+			foundNewLow = true
+			// NEW-LOW has no base, so no breakdown — omitempty drops the key.
+			if len(r.Principles) != 0 {
+				t.Errorf("pkg.New should have no principles, got %+v", r.Principles)
 			}
 		}
 	}
 	if !foundReg {
 		t.Error("pkg.Reg not in JSON results")
+	}
+	if !foundNewLow {
+		t.Error("pkg.New not in JSON results")
 	}
 }
 

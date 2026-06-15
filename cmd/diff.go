@@ -66,9 +66,10 @@ func loadBaseline(path string) ([]differ.Snapshot, error) {
 	for _, r := range doc.Results {
 		snaps = append(snaps, differ.Snapshot{
 			ID: r.ID, Name: r.Name, Package: r.Package, Total: r.Total,
-			Principles: map[string]float64{
-				"SRP": r.SRP, "OCP": r.OCP, "LSP": r.LSP, "ISP": r.ISP, "DIP": r.DIP,
-			},
+			// Principles() returns nil for legacy baselines that lack the
+			// per-principle keys, so differ omits a (misleading) breakdown
+			// rather than diffing against phantom 0.0 scores.
+			Principles: r.Principles(),
 		})
 	}
 	return snaps, nil

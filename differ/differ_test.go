@@ -28,6 +28,31 @@ func entryOf(r differ.Report, id string) *differ.Entry {
 	return nil
 }
 
+// TestDiff_NoPrincipleDeltasWhenSideMissing verifies the backward-compat
+// degradation: if either side lacks per-principle data (e.g. a legacy baseline
+// with no srp/ocp/... keys), no breakdown is produced rather than diffing
+// against phantom zero scores.
+func TestDiff_NoPrincipleDeltasWhenSideMissing(t *testing.T) {
+	// base has no per-principle data; head does.
+	base := []differ.Snapshot{{ID: "pkg.Svc", Name: "Svc", Package: "pkg", Total: 100}}
+	head := []differ.Snapshot{{
+		ID: "pkg.Svc", Name: "Svc", Package: "pkg", Total: 75,
+		Principles: map[string]float64{"SRP": 60, "OCP": 100},
+	}}
+
+	r := differ.Diff(base, head, differ.Options{MaxDrop: 5})
+	e := entryOf(r, "pkg.Svc")
+	if e == nil {
+		t.Fatal("pkg.Svc not found")
+	}
+	if e.Status != differ.StatusRegressed {
+		t.Errorf("expected REGRESSED on total, got %q", e.Status)
+	}
+	if len(e.PrincipleDeltas) != 0 {
+		t.Errorf("legacy baseline must yield no principle deltas, got %+v", e.PrincipleDeltas)
+	}
+}
+
 // TestDiff_PrincipleDeltas verifies that, for a target present in both base and
 // head, the per-principle changes are computed so callers can show *what* moved
 // (not just the total). Only principles that actually changed are reported,
