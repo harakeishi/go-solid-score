@@ -80,12 +80,13 @@ func runDiffWith(t *testing.T, basePath string, failOnReg bool, pkgs ...string) 
 func TestDiff_FailOnRegression(t *testing.T) {
 	dir := t.TempDir()
 	// Baseline: a target that exists in the analyzed package, pinned high.
-	// Use the differ package itself as the analysis target; differ.Report
-	// scores below 100 on DIP, so it regresses against a 100 baseline.
-	base := writeBaseline(t, dir, "github.com/harakeishi/go-solid-score/differ.Report",
-		"github.com/harakeishi/go-solid-score/differ", "Report", 100.0)
+	// Use scorer.Scorer as the analysis target; it depends on a concrete
+	// dependency and so scores below 100 on DIP, regressing against a 100
+	// baseline.
+	base := writeBaseline(t, dir, "github.com/harakeishi/go-solid-score/scorer.Scorer",
+		"github.com/harakeishi/go-solid-score/scorer", "Scorer", 100.0)
 
-	pkg := "github.com/harakeishi/go-solid-score/differ"
+	pkg := "github.com/harakeishi/go-solid-score/scorer"
 
 	// Without --fail-on-regression: reports but exits 0.
 	if err := runDiffWith(t, base, false, pkg); err != nil {

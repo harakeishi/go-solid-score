@@ -95,6 +95,7 @@ Uses **LCOM4** (Lack of Cohesion of Methods) to measure struct cohesion.
 
 - Builds a graph where two methods are connected if they share a field or call each other
 - Counts connected components via BFS — more components = more responsibilities
+- A method that accesses **no** receiver field and is uncoupled from siblings (e.g. an `errors.Is`/`As` convention method, or a stateless adapter method) is excluded from the count: LCOM measures cohesion *over fields*, so a stateless method neither adds nor removes a data responsibility. Oversized types are still flagged by the method-count penalty below.
 
 | LCOM4 | Penalty |
 |-------|---------|
@@ -114,10 +115,15 @@ Detects code patterns that require modification when adding new types.
 | Pattern | Per Instance | Max Penalty |
 |---------|-------------|-------------|
 | Type switch | −15 | −40 |
-| Type assertion | −10 | −40 |
+| Type assertion (to a concrete type) | −10 | −40 |
 | Reflect usage | −5 | −20 |
 
 A density penalty applies if type-check statements exceed 15% (−10) or 30% (−20) of total statements. Interface parameters in methods earn a bonus (+5 each, max +20).
+
+Type assertions whose target is an **interface** (capability/feature detection,
+e.g. `if f, ok := w.(http.Flusher); ok { … }`) are *not* penalized: they are
+open for extension — a new type implementing the interface needs no change here
+— unlike a downcast to a concrete type, which is the OCP smell.
 
 </details>
 
@@ -128,11 +134,14 @@ Checks whether interface implementations honour their contracts.
 
 | Violation | Penalty |
 |-----------|---------|
-| Method calls `panic()` | −20 |
+| Method panics *unconditionally* (e.g. a "not implemented" stub) | −20 |
 | No-op implementation | −15 |
 | Missing override of embedded interface method | −10 each |
 
-Only methods that satisfy a declared interface are evaluated.
+Only methods that satisfy a declared interface are evaluated. Panics that fire
+only inside an argument/state guard (`if bad { panic(...) }`) are idiomatic
+fail-fast in Go and are **not** penalized — only panics on the method's
+straight-line path count.
 
 </details>
 
@@ -168,7 +177,21 @@ Score = (weighted interface deps / weighted total deps) × 100
 | Constructor params | 1.0 |
 | Exported method params | 0.3 |
 
-Constructor accepting interfaces earns +15 bonus. Standard library types and user-configured whitelist types are excluded.
+Constructor accepting interfaces earns +15 bonus. Collections of an interface
+(e.g. `[]Handler`) count as abstraction dependencies.
+
+Only *owned collaborators* count toward the ratio. The following are **not**
+treated as dependencies, because penalizing them produced false positives on
+idiomatic aggregate/config types: standard-library and user-whitelisted types
+(including collections of them), function-typed fields (callbacks/strategies),
+pure-data value types — those whose element is a builtin basic type, such as
+`map[string]string` or a named alias like `type FieldMap …` — and
+self-references (recursive/tree structures). A collection of a concrete struct
+(e.g. `[]*Worker`) *does* count as a concrete dependency. A type that owns no
+structural dependency at all is reported as *DIP not applicable* (top score,
+low confidence) rather than penalized via its method parameters. See
+[`docs/scoring-analysis.md`](docs/scoring-analysis.md) for the benchmarking that
+motivated these rules.
 
 </details>
 

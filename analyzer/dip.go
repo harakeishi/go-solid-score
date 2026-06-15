@@ -39,6 +39,12 @@ const (
 	fieldDepWeight       = 1.0
 	constructorDepWeight = 1.0
 	paramDepWeight       = 0.3 // method params are less significant for DIP
+
+	// dipNeutralScore is the floor applied when a type has only call-time
+	// (method-parameter) dependencies and no owned (field/constructor) ones.
+	// Such a concrete parameter is ambiguous (a real collaborator vs. a data
+	// object), so the score is neither slammed to zero nor lifted to 100.
+	dipNeutralScore = 50.0
 )
 
 func (a *DIPAnalyzer) analyzeStruct(s *model.StructInfo, pkg *model.PackageInfo) Result {
@@ -60,7 +66,7 @@ func (a *DIPAnalyzer) analyzeStruct(s *model.StructInfo, pkg *model.PackageInfo)
 		if f.Name == "" {
 			continue // skip embedded fields
 		}
-		if isWhitelisted(f.TypeName, a.userWhitelist) {
+		if a.skipDep(f.TypeName, f.IsIface, f.IsFunc, f.IsValue, s.Name) {
 			continue
 		}
 		dw.total += fieldDepWeight
@@ -75,7 +81,7 @@ func (a *DIPAnalyzer) analyzeStruct(s *model.StructInfo, pkg *model.PackageInfo)
 	constructor := a.findConstructor(s.Name, pkg)
 	if constructor != nil {
 		for _, p := range constructor.Params {
-			if isWhitelisted(p.TypeName, a.userWhitelist) {
+			if a.skipDep(p.TypeName, p.IsIface, p.IsFunc, p.IsValue, s.Name) {
 				continue
 			}
 			dw.total += constructorDepWeight
@@ -87,13 +93,17 @@ func (a *DIPAnalyzer) analyzeStruct(s *model.StructInfo, pkg *model.PackageInfo)
 		}
 	}
 
-	// Analyze exported method parameters (low weight - call-time dependencies)
+	// Structural dependencies (fields + constructor injection) are what a type
+	// *owns* and is the proper subject of DIP.
+	structuralTotal := dw.total
+
+	// Analyze exported method parameters (low weight - call-time dependencies).
 	for _, m := range s.Methods {
 		if !m.IsExported {
 			continue
 		}
 		for _, p := range m.Params {
-			if isWhitelisted(p.TypeName, a.userWhitelist) {
+			if a.skipDep(p.TypeName, p.IsIface, p.IsFunc, p.IsValue, s.Name) {
 				continue
 			}
 			dw.total += paramDepWeight
@@ -105,14 +115,40 @@ func (a *DIPAnalyzer) analyzeStruct(s *model.StructInfo, pkg *model.PackageInfo)
 		}
 	}
 
+	// No dependencies at all: the type owns nothing concrete and takes nothing
+	// concrete, so it vacuously satisfies DIP. Report the top score but with low
+	// confidence to flag that the value is not a meaningful signal.
 	if dw.total == 0 {
-		r.Confidence = ConfidenceLowMedium
-		r.Details = append(r.Details, "no non-whitelisted dependencies")
+		r.Confidence = ConfidenceLow
+		r.Details = append(r.Details, "no dependencies; DIP not applicable")
+		return r
+	}
+
+	ratio := dw.iface / dw.total
+
+	// Only call-time (method-parameter) dependencies, no owned ones. A concrete
+	// method parameter is ambiguous: it may be a genuine collaborator
+	// (Run(db *sql.DB) — a real concrete coupling worth flagging) or merely a
+	// data object the method operates on (Format(*Entry) — not a dependency to
+	// invert). Because the two are structurally indistinguishable, the ratio is
+	// floored at a neutral value with low confidence: this neither confidently
+	// penalizes a DTO-taking method to zero (a false positive) nor confidently
+	// absolves a concrete service coupling at 100 (a false negative). When the
+	// parameters are interfaces the ratio already lifts the score above neutral.
+	if structuralTotal == 0 {
+		r.Score = Clamp(ratio * 100)
+		if r.Score < dipNeutralScore {
+			r.Score = dipNeutralScore
+		}
+		r.Confidence = ConfidenceLow
+		r.Details = append(r.Details, "only call-time (method-parameter) dependencies; DIP weakly applicable")
+		for _, d := range concreteDeps {
+			r.Details = append(r.Details, "  - "+d)
+		}
 		return r
 	}
 
 	// Score based on weighted interface dependency ratio
-	ratio := dw.iface / dw.total
 	r.Score = ratio * 100
 
 	// Bonus: if constructor accepts interfaces (dependency injection pattern)
@@ -136,6 +172,41 @@ func (a *DIPAnalyzer) analyzeStruct(s *model.StructInfo, pkg *model.PackageInfo)
 
 	r.Score = Clamp(r.Score)
 	return r
+}
+
+// skipDep reports whether a field or parameter of the given type should be
+// excluded from the DIP dependency ratio. A type is skipped when it is:
+//
+//   - a whitelisted builtin/stdlib value type (incl. collections of them);
+//   - a function type (callback/strategy) — behavioral injection, neither a
+//     concrete coupling to invert nor an interface collaborator;
+//   - a pure-data value type — one whose core element is a builtin basic type
+//     (int, string, map[string]string, named aliases like `type FieldMap
+//     map[string]string`, …). These hold data, not collaborators. A collection
+//     of structs (e.g. `[]*PaymentService`) is deliberately NOT skipped here:
+//     its element is a concrete collaborator and remains a concrete dependency;
+//   - a self-reference — recursive/tree structures are structural composition,
+//     not injected collaborators.
+//
+// Excluding these removes the dominant source of false-positive DIP penalties
+// observed on idiomatic Go types (config/aggregate structs full of value,
+// callback, and self-referential fields), without masking genuine concrete
+// dependencies such as `db *sql.DB` or `workers []*Worker`. A container *of
+// interfaces* (e.g. `handlers []Handler`) is kept as an abstraction dependency.
+func (a *DIPAnalyzer) skipDep(typeName string, isIface, isFunc, isValue bool, structName string) bool {
+	if isWhitelisted(typeName, a.userWhitelist) {
+		return true
+	}
+	// isFunc carries the precise (type-checked) answer; the string-prefix check
+	// is only a fallback for when type info is unavailable (info == nil) and the
+	// type name was rendered as "func(...)".
+	if isFunc || strings.HasPrefix(coreTypeName(typeName), "func(") {
+		return true
+	}
+	if isValue && !isIface {
+		return true
+	}
+	return isSelfReference(typeName, structName)
 }
 
 func (a *DIPAnalyzer) findConstructor(structName string, pkg *model.PackageInfo) *model.FuncInfo {

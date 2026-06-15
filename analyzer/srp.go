@@ -126,19 +126,27 @@ func calculateLCOM4(methods []*model.MethodInfo) int {
 		}
 	}
 
-	// BFS to count connected components
+	// BFS to count connected components, excluding singleton components whose
+	// sole method accesses no receiver field. Such a method is stateless with
+	// respect to the struct — a common example is an errors.Is/As convention
+	// method that only inspects its argument, or any helper that operates
+	// purely on parameters — and does not represent a distinct responsibility
+	// over the struct's data. Counting it inflated LCOM4 and produced
+	// false-positive SRP penalties on otherwise cohesive types. Methods that
+	// access a field, or that are coupled to a sibling via a call, still count.
 	visited := make([]bool, n)
 	components := 0
 	for i := 0; i < n; i++ {
 		if visited[i] {
 			continue
 		}
-		components++
 		queue := []int{i}
 		visited[i] = true
+		members := 0
 		for len(queue) > 0 {
 			curr := queue[0]
 			queue = queue[1:]
+			members++
 			for j := 0; j < n; j++ {
 				if !visited[j] && adj[curr][j] {
 					visited[j] = true
@@ -146,6 +154,10 @@ func calculateLCOM4(methods []*model.MethodInfo) int {
 				}
 			}
 		}
+		if members == 1 && len(methods[i].AccessedFields) == 0 {
+			continue // stateless, uncoupled method: not a data responsibility
+		}
+		components++
 	}
 	return components
 }

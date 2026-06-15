@@ -49,10 +49,12 @@ func (a *LSPAnalyzer) analyzeStruct(s *model.StructInfo, pkg *model.PackageInfo)
 			continue
 		}
 
-		// Penalty: method panics
-		if m.HasPanic {
+		// Penalty: method panics unconditionally (e.g. a "not implemented"
+		// stub). Guard panics that only fire on invalid arguments/state are
+		// idiomatic fail-fast in Go and are not treated as LSP violations.
+		if m.HasUnconditionalPanic {
 			r.Score -= 20
-			r.Details = append(r.Details, fmt.Sprintf("method %s calls panic()", m.Name))
+			r.Details = append(r.Details, fmt.Sprintf("method %s panics unconditionally (possible LSP violation)", m.Name))
 		}
 
 		// Penalty: no-op method
