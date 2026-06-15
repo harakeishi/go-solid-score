@@ -152,7 +152,10 @@ func FormatDiffJSON(r differ.Report) string {
 		Summary summary          `json:"summary"`
 	}
 
-	d := doc{Summary: summary{Counts: map[string]int{}, Regressed: r.Regressed}}
+	d := doc{
+		Results: []diffJSONResult{}, // emit [] not null for an empty diff
+		Summary: summary{Counts: map[string]int{}, Regressed: r.Regressed},
+	}
 	for s, c := range r.Counts {
 		d.Summary.Counts[string(s)] = c
 	}

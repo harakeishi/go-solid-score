@@ -87,3 +87,13 @@ func TestFormatDiffJSON(t *testing.T) {
 		t.Error("pkg.Reg not in JSON results")
 	}
 }
+
+// TestFormatDiffJSON_EmptyResultsIsArray guards that an empty diff emits
+// "results": [] (not null), matching the main JSONFormatter contract so
+// consumers can always iterate the array.
+func TestFormatDiffJSON_EmptyResultsIsArray(t *testing.T) {
+	out := formatter.FormatDiffJSON(differ.Report{Counts: map[differ.Status]int{}})
+	if !strings.Contains(out, `"results": []`) {
+		t.Errorf("empty diff should emit results: [], got:\n%s", out)
+	}
+}
