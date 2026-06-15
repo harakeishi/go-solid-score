@@ -1,68 +1,65 @@
-# Design: `diff` subcommand for relative (regression) quality gating
+# 設計: 相対評価（回帰検出）による品質ゲート用 `diff` サブコマンド
 
-Date: 2026-06-15
-Status: Approved (pending spec review)
-Branch: `feat/diff-command`
+日付: 2026-06-15
+ステータス: 承認済み（スペックレビュー待ち）
+ブランチ: `feat/diff-command`
 
-## Background / Motivation
+## 背景 / 動機
 
-`go-solid-score` produces a SOLID score per struct, but the **absolute value of
-the score has weak grounding** (penalty magnitudes like −40/−70 are heuristic).
-The tool is therefore most useful for **relative evaluation**: detecting whether
-a change made the design *worse*, rather than asserting an absolute "good/bad".
+`go-solid-score` は struct ごとに SOLID スコアを算出するが、**スコアの絶対値の
+根拠は薄い**（−40/−70 といった減点幅はヒューリスティック）。そのため本ツールは
+「絶対的な良し悪し」を断じる用途より、**相対評価** ＝「変更によって設計が *悪化*
+したか」を検出する用途で最も価値を発揮する。
 
-A prior PR (#3, merged) added a **stable target identity** — each result carries
-an `id` of the form `<pkgPath>.<TypeName>` (e.g.
-`github.com/foo/bar.MyStruct`), independent of the absolute file path, so the
-same target can be matched across two runs even after file renames/moves. This
-spec builds the regression-detection layer on top of that foundation.
+先行 PR（#3, マージ済み）で **安定したターゲット識別子** を導入した。各結果は
+`<pkgPath>.<TypeName>`（例: `github.com/foo/bar.MyStruct`）形式の `id` を持ち、
+絶対ファイルパスに依存しないため、ファイルのリネーム・移動を跨いでも2回の実行
+結果で同一ターゲットを突き合わせられる。本スペックはこの土台の上に回帰検出層を
+構築する。
 
-## Industry research (informing this design)
+## 業界調査（本設計の根拠）
 
-Surveyed SonarQube, Codecov, Coveralls, golangci-lint, betterer, reviewdog,
-octocov. Consistent "winning patterns":
+SonarQube / Codecov / Coveralls / golangci-lint / betterer / reviewdog /
+octocov を調査。一貫した「勝ちパターン」:
 
-1. **Two axes: overall vs. diff.** Gate on the *changed* set, not the whole
-   codebase ("Clean as You Code"). Don't punish a developer for pre-existing
-   legacy.
-2. **Absolute threshold AND relative-drop, both supported.**
-3. **A tolerance ("wiggle room") to ignore tiny drops is mandatory** — Coveralls
-   famously red-X'd on `-0.0%`; Codecov's `project` default threshold is 5%;
-   SonarQube has a 20-line fudge factor. Especially important for our *discrete*
-   scores.
-4. **Report-only vs. blocking is a flag, expressed via exit code** (reviewdog
-   `-fail-level`, golangci-lint `issues-exit-code`).
-5. **baseline delivery**: file-based (betterer/tsc-baseline) vs. git-rev
-   (golangci-lint). File-based is reviewable, works under shallow clone, and —
-   since we have stable IDs — avoids the line-shift false positives that plague
-   git-rev/line-based diffs.
-6. **Output distinguishes increase / decrease / unchanged at a glance**
-   (Codecov `+`/`-`/`ø`).
-7. **octocov split**: the CLI computes and emits Markdown; PR comment *posting*
-   (and "update previous comment") is a thin CI layer, not the CLI's job. The
-   "where is the baseline stored" problem is solved by a datastore abstraction
-   in octocov — we deliberately leave that to CI (see Non-goals).
+1. **2軸: 全体 vs 差分。** コードベース全体ではなく *変更された* 集合でゲートする
+   （"Clean as You Code"）。既存レガシーで開発者を罰しない。
+2. **絶対閾値と前回比悪化（relative drop）の両方をサポート。**
+3. **微小な下落を無視する「遊び（tolerance）」が必須** — Coveralls は `-0.0%` で
+   赤バツを出して悪名高く、Codecov の `project` デフォルト閾値は 5%、SonarQube は
+   20行の fudge factor を持つ。**離散的な**我々のスコアでは特に重要。
+4. **報告のみ vs ブロッキングはフラグで切り替え、exit code で表現**
+   （reviewdog の `-fail-level`、golangci-lint の `issues-exit-code`）。
+5. **baseline の渡し方**: ファイル方式（betterer / tsc-baseline）と git-rev 方式
+   （golangci-lint）がある。ファイル方式はレビュー可能で、shallow clone でも動き、
+   さらに我々は安定 ID を持つため、git-rev / 行ベース diff にありがちな行ずれ
+   誤検知を回避できる。
+6. **出力は 増加 / 減少 / 変化なし を一目で区別**（Codecov の `+`/`-`/`ø`）。
+7. **octocov の責務分割**: CLI は計算と Markdown 生成まで。PR コメントの *投稿*
+   （および「前回コメントの更新」）は CI 側の薄い層であり CLI の責務ではない。
+   「baseline をどこに保存するか」は octocov では datastore 抽象化で解決して
+   いるが、我々はこれを CI に委ねる（Non-goals 参照）。
 
-## Goals
+## ゴール
 
-- A `diff` subcommand that compares a baseline JSON against a freshly-analyzed
-  head and classifies each target.
-- Separate handling of **existing targets (relative drop)** and **new targets
-  (absolute min-score)**.
-- A tolerance flag so tiny/zero drops don't cause noise.
-- Report-only by default; opt-in CI failure via a flag.
-- Text and Markdown output (Markdown for PR comments, octocov-style).
-- A GitHub Actions workflow sample that posts/updates a PR comment.
+- baseline JSON と、その場で解析した head を比較し、各ターゲットを分類する
+  `diff` サブコマンド。
+- **既存ターゲット（相対下落）** と **新規ターゲット（絶対 min-score）** を分けて
+  扱う。
+- 微小・ゼロの下落でノイズを出さないための遊び（tolerance）フラグ。
+- デフォルトは報告のみ。フラグで CI 失敗をオプトイン。
+- text / Markdown 出力（Markdown は octocov 風の PR コメント用）。
+- PR コメントを投稿/更新する GitHub Actions ワークフローのサンプル。
 
-## Non-goals (YAGNI, deliberately deferred)
+## Non-goals（YAGNI のため意図的に見送り）
 
-- **Datastore abstraction** (artifact/S3/GCS/BigQuery) for fetching the
-  baseline. Acquiring `base.json` is the CI workflow's responsibility; the CLI
-  only takes `--base <file>`. May be added later.
-- **git-rev based baseline** (`--base-rev HEAD~1`). File-only for now.
-- **Per-principle gating** as a default. Per-principle deltas may be shown in
-  verbose/details, but the gate decision is on `total`.
-- Self-committing badges / SVG output.
+- baseline 取得のための **datastore 抽象化**（artifact/S3/GCS/BigQuery）。
+  `base.json` の取得は CI ワークフローの責務とし、CLI は `--base <file>` だけを
+  受け取る。将来追加する可能性はある。
+- **git-rev ベースの baseline**（`--base-rev HEAD~1`）。今回はファイルのみ。
+- **原則別ゲート** のデフォルト化。原則別の差分は verbose/details で表示する
+  かもしれないが、ゲート判定は `total` で行う。
+- バッジの自動コミット / SVG 出力。
 
 ## CLI
 
@@ -70,57 +67,56 @@ octocov. Consistent "winning patterns":
 go-solid-score diff --base <base.json> [flags] [packages...]
 ```
 
-`base.json` is produced beforehand by `go-solid-score -f json ...`. The head is
-analyzed in-process by reusing the existing parse→analyze→score core.
+`base.json` は事前に `go-solid-score -f json ...` で出力したもの。head は既存の
+parse→analyze→score コアを再利用してその場で解析する。
 
-### Flags
+### フラグ
 
-| Flag | Default | Meaning |
-|------|---------|---------|
-| `--base <file>` | (required) | Baseline JSON to compare against. |
-| `--max-drop <float>` | **5.0** | A `total` drop strictly greater than this on an existing target is a REGRESSED. (Industry-aligned wiggle room.) |
-| `--min-score <float>` | 0 (disabled) | A NEW target scoring below this is NEW-LOW. |
-| `--fail-on-regression` | false | Exit 1 if any REGRESSED or NEW-LOW exists. Default is report-only (exit 0). |
-| `-f, --format` | text | `text`, `json`, or `markdown`. |
-| `-c, --config` | `.go-solid-score.yaml` | Reuses existing config loading (weights/thresholds/dip whitelist) for analyzing head. |
+| フラグ | デフォルト | 意味 |
+|------|---------|------|
+| `--base <file>` | （必須） | 比較元となる baseline JSON。 |
+| `--max-drop <float>` | **5.0** | 既存ターゲットの `total` がこの値を**超えて**下落したら REGRESSED とする（業界に合わせた遊び）。 |
+| `--min-score <float>` | 0（無効） | 新規ターゲットがこの値未満なら NEW-LOW とする。 |
+| `--fail-on-regression` | false | REGRESSED または NEW-LOW が1件でもあれば exit 1。デフォルトは報告のみ（exit 0）。 |
+| `-f, --format` | text | `text` / `json` / `markdown`。 |
+| `-c, --config` | `.go-solid-score.yaml` | head の解析に既存の設定ロード（weights/thresholds/dip whitelist）を再利用。 |
 
-The global root flags relevant to analysis (config, weights) apply to the head
-analysis so that base and head are scored with the same rules. **Caveat:** the
-baseline must have been generated with the same weights; mismatched weights are
-the user's responsibility (documented), not validated by the tool.
+解析に関わるルートフラグ（config, weights）は head の解析に適用し、base と head が
+同じルールでスコアリングされるようにする。**注意:** baseline は同じ weights で
+生成されている必要がある。weights の不一致はユーザーの責任（ドキュメントに明記）で
+あり、ツールでは検証しない。
 
-### Classification
+### 分類
 
-Match base targets and head targets by `id` (the stable `<pkgPath>.<name>`,
-falling back to `<file>:<name>` when pkg path is empty — same rule as the merge
-key, already centralized in `scorer.targetID`).
+base のターゲットと head のターゲットを `id`（安定した `<pkgPath>.<name>`、pkg path
+が空なら `<file>:<name>` にフォールバック ＝ マージキーと同じルールで、既に
+`scorer.targetID` に集約済み）で突き合わせる。
 
-For each id:
+各 id について:
 
-- **In both** → compare `total`:
+- **両方に存在** → `total` を比較:
   - `base.total - head.total > maxDrop` → **REGRESSED**
   - `head.total > base.total` → **IMPROVED**
-  - otherwise → **UNCHANGED** (includes small drops within tolerance)
-- **Head only** → **NEW**, or **NEW-LOW** if `minScore > 0 && head.total < minScore`
-- **Base only** → **REMOVED** (informational; never a regression)
+  - それ以外 → **UNCHANGED**（遊びの範囲内の小さな下落も含む）
+- **head のみ** → **NEW**、または `minScore > 0 && head.total < minScore` なら
+  **NEW-LOW**
+- **base のみ** → **REMOVED**（情報表示のみ。回帰とは扱わない）
 
-A run is "regressed" (for exit-code purposes) iff it contains ≥1 REGRESSED or
-≥1 NEW-LOW.
+exit code 判定上、REGRESSED または NEW-LOW を1件以上含む実行を「回帰あり」とみなす。
 
-**Sign convention:** the displayed `diff` is `head.total - base.total`, so a
-drop is negative (e.g. `-14.0`) and an improvement positive (e.g. `+20.0`).
-The REGRESSED test `base.total - head.total > maxDrop` is equivalent to
-`diff < -maxDrop`.
+**符号規約:** 表示する `diff` は `head.total - base.total`。したがって下落は負
+（例: `-14.0`）、改善は正（例: `+20.0`）。REGRESSED の判定式
+`base.total - head.total > maxDrop` は `diff < -maxDrop` と等価。
 
-### Exit code
+### exit code
 
-- Report-only (default): always **0**.
-- With `--fail-on-regression`: **1** if regressed, else **0**.
-- Usage/IO errors: non-zero (existing cobra behavior).
+- 報告のみ（デフォルト）: 常に **0**。
+- `--fail-on-regression` 指定時: 回帰ありなら **1**、なければ **0**。
+- 使用方法 / I/O エラー: 非ゼロ（cobra の既存挙動）。
 
-## Output
+## 出力
 
-### text (Codecov-style markers)
+### text（Codecov 風のマーカー）
 
 ```
 go-solid-score diff (base: base.json)
@@ -134,12 +130,11 @@ REMOVED    github.com/foo/old.Thing
 1 regressed, 1 new-low, 1 improved, 1 new, 1 removed, 12 unchanged
 ```
 
-UNCHANGED targets are summarized in the count line, not listed individually.
+UNCHANGED のターゲットは個別に列挙せず、集計行にまとめる。
 
-### markdown (octocov-style, for PR comments)
+### markdown（octocov 風、PR コメント用）
 
-A leading HTML marker comment lets the CI layer find & update the previous
-comment:
+先頭の HTML マーカーコメントにより、CI 側が前回コメントを探して更新できる:
 
 ```markdown
 <!-- go-solid-score-diff -->
@@ -164,76 +159,72 @@ comment:
 </details>
 ```
 
-Notable/changed targets are shown in the top table; the full list (including
-UNCHANGED) is folded in `<details>`, matching this repo's existing README style
-and octocov.
+注目すべき（変化のある）ターゲットを上部のテーブルに表示し、全件（UNCHANGED 含む）は
+`<details>` に畳む。これは本リポジトリ既存の README スタイルおよび octocov と揃える。
 
 ### json
 
-Machine-readable, for tooling: an array of `{id, name, package, status, base,
-head, diff}` plus a summary block of counts and a `regressed` boolean.
+ツール連携用の機械可読形式。`{id, name, package, status, base, head, diff}` の
+配列に、件数のサマリブロックと `regressed` 真偽値を付与する。
 
-## Components (responsibility separation)
+## コンポーネント（責務分離）
 
-New package **`differ`** — pure comparison logic, no I/O, no scoring:
+新規パッケージ **`differ`** — 純粋な比較ロジックのみ。I/O もスコアリングも持たない:
 
 - `type Snapshot struct { ID, Name, Package string; Total float64 }`
-  (the minimal projection needed for diffing; decoded from base JSON and
-  produced from head `ScoreResult`s).
-- `type Status string` with constants REGRESSED / IMPROVED / UNCHANGED /
-  NEW / NEW_LOW / REMOVED.
+  （diff に必要な最小限の投影。base JSON からデコードし、head の `ScoreResult` から
+  生成する）。
+- `type Status string` と定数 REGRESSED / IMPROVED / UNCHANGED / NEW /
+  NEW_LOW / REMOVED。
 - `type Entry struct { ID, Name, Package string; Status Status; Base, Head *float64 }`
 - `type Report struct { Entries []Entry; Counts map[Status]int; Regressed bool }`
-- `func Diff(base, head []Snapshot, opts Options) Report` — **pure function**,
-  the core unit under test. `Options{MaxDrop, MinScore float64}`.
+- `func Diff(base, head []Snapshot, opts Options) Report` — **純関数**。テスト対象の
+  中核。`Options{MaxDrop, MinScore float64}`。
 
-Supporting wiring (kept thin, outside `differ`):
+周辺の配線（薄く保ち、`differ` の外に置く）:
 
-- **Base decoding**: reuse the JSON shape emitted by `formatter`. To avoid
-  duplicating the struct, extract the JSON result shape into a small shared
-  type the formatter writes and the diff path reads, OR add a minimal decoder
-  in the diff command. Decision: extract a shared `formatter` type
-  (`formatter.JSONResult`) so the contract has one source of truth.
-- **Head scoring**: extract the parse→analyze→score core of `cmd.run()` into a
-  reusable function (e.g. `cmd.analyze(cfg, patterns) ([]*scorer.ScoreResult, error)`)
-  so both `run` and `diff` call it. This is the one pre-existing-code refactor
-  required, and it improves `root.go`'s current "does everything" shape.
-- **Diff output formatting**: add text/markdown/json rendering for
-  `differ.Report`. Placed in `formatter` (new `diff_text.go`, `diff_markdown.go`,
-  `diff_json.go`) to match the existing formatter location, or rendered by a
-  small `differ` printer. Decision: put rendering in `formatter` next to the
-  existing formatters for discoverability.
+- **base のデコード**: `formatter` が出力する JSON 形状を再利用する。struct の二重
+  定義を避けるため、JSON の結果形状を共有型（`formatter.JSONResult`）として抽出し、
+  formatter が書き、diff 経路が読む。これで契約のソースを1つにする。
+- **head のスコアリング**: `cmd.run()` の parse→analyze→score コア部分を再利用可能な
+  関数（例: `cmd.analyze(cfg, patterns) ([]*scorer.ScoreResult, error)`）に切り出し、
+  `run` と `diff` の両方から呼ぶ。これが唯一必要となる既存コードのリファクタで、
+  現状「何でもやっている」`root.go` の形を改善する。
+- **diff 出力の整形**: `differ.Report` の text/markdown/json レンダリングを追加する。
+  発見しやすさのため、既存フォーマッタと同じ `formatter` 配下に置く（新規
+  `diff_text.go` / `diff_markdown.go` / `diff_json.go`）。
 
-## GitHub Actions sample
+## GitHub Actions サンプル
 
-`.github/workflows/solid-diff.yml` (sample, documented in README):
+`.github/workflows/solid-diff.yml`（サンプル。README に記載）:
 
-1. Checkout PR.
-2. Obtain `base.json` for the merge base — sample uses `actions/cache` or a
-   checkout of the base ref + `go-solid-score -f json` (documented; the
-   "datastore" concern lives here, not in the CLI).
+1. PR をチェックアウト。
+2. merge base の `base.json` を取得 — サンプルでは `actions/cache`、または base ref を
+   チェックアウトして `go-solid-score -f json` を実行する方式を示す（「datastore」的な
+   関心事はここに置き、CLI には持たせない）。
 3. `go-solid-score diff --base base.json -f markdown ./... > comment.md`
-   (optionally `--fail-on-regression`).
-4. Post/update PR comment using the `<!-- go-solid-score-diff -->` marker
-   (e.g. a maintained marketplace action or a small `gh pr comment` script).
-5. Requires `permissions: pull-requests: write`. Note fork-PR limitation:
-   no write token → fall back to job summary (documented, octocov-style).
+   （必要に応じて `--fail-on-regression`）。
+4. `<!-- go-solid-score-diff -->` マーカーを使って PR コメントを投稿/更新する
+   （メンテされている marketplace action、または小さな `gh pr comment` スクリプト）。
+5. `permissions: pull-requests: write` が必要。fork PR の制約に注意: 書き込み
+   トークンが無いため job summary にフォールバックする（octocov 同様、ドキュメントに
+   明記）。
 
-## Testing
+## テスト
 
-- `differ.Diff`: table-driven unit tests covering every status, the `maxDrop`
-  boundary (drop == maxDrop → UNCHANGED; drop just over → REGRESSED), `minScore`
-  on/off for NEW vs NEW-LOW, REMOVED, and the `Regressed` flag.
-- Base decoding round-trip: a `formatter` JSON output decodes back into
-  `Snapshot`s with ids intact (guards the shared-type contract).
-- Formatters: text/markdown/json output for a representative `Report`
-  (assert markers, marker comment, counts line, details fold).
-- `cmd diff`: golden/end-to-end test — write a base.json, run against a testdata
-  package, assert exit code under `--fail-on-regression` with and without a
-  regression.
+- `differ.Diff`: 全ステータスを網羅するテーブル駆動テスト。`maxDrop` 境界
+  （下落 == maxDrop → UNCHANGED、わずかに超過 → REGRESSED）、NEW と NEW-LOW の
+  `minScore` on/off、REMOVED、`Regressed` フラグを検証。
+- base デコードのラウンドトリップ: `formatter` の JSON 出力が id を保ったまま
+  `Snapshot` にデコードできること（共有型の契約を守る）。
+- フォーマッタ: 代表的な `Report` に対する text/markdown/json 出力（マーカー、
+  マーカーコメント、集計行、details 折り畳みを検証）。
+- `cmd diff`: ゴールデン / エンドツーエンドテスト — base.json を書き出し、testdata
+  パッケージに対して実行し、回帰あり/なしの両方で `--fail-on-regression` 時の
+  exit code を検証。
 
-## Rollout
+## ロールアウト
 
-Single PR on `feat/diff-command`: `differ` package + formatter renderers +
-`cmd diff` + shared analyze refactor + Actions sample + README section + tests.
-The Actions sample is documentation/CI config and does not block the CLI.
+`feat/diff-command` 上の単一 PR: `differ` パッケージ + フォーマッタのレンダラ +
+`cmd diff` + 共有 analyze リファクタ + Actions サンプル + README セクション +
+テスト。Actions サンプルはドキュメント / CI 設定であり、CLI の実装をブロックしない。
