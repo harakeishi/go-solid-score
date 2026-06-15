@@ -36,8 +36,18 @@ jobs:
           go-solid-score diff --base base.json -f markdown ./... > comment.md
           go-solid-score diff --base base.json ./...  # human-readable log
 
+      # Same-repo PRs have a write token: post (and update) a sticky comment.
       - name: Comment on PR
+        if: github.event.pull_request.head.repo.full_name == github.repository
         uses: marocchino/sticky-pull-request-comment@v2
         with:
           header: go-solid-score-diff
           path: comment.md
+
+      # Fork PRs run with a read-only token, so commenting would 403. Fall back
+      # to the job summary, which is always writable. (Do NOT switch to
+      # pull_request_target — that would run untrusted fork code with a write
+      # token.)
+      - name: Report to job summary (fork PRs)
+        if: github.event.pull_request.head.repo.full_name != github.repository
+        run: cat comment.md >> "$GITHUB_STEP_SUMMARY"

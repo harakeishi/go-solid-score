@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -94,5 +95,25 @@ func TestDiff_FailOnRegression(t *testing.T) {
 	// With --fail-on-regression: a regression must produce a non-nil error.
 	if err := runDiffWith(t, base, true, pkg); err == nil {
 		t.Error("with --fail-on-regression and a regression, expected non-nil error (exit 1)")
+	}
+}
+
+// TestDiff_UnknownFormat verifies that an unrecognized -f value is rejected
+// with a clear error, before any analysis runs.
+func TestDiff_UnknownFormat(t *testing.T) {
+	dir := t.TempDir()
+	base := writeBaseline(t, dir, "pkg.Foo", "pkg", "Foo", 80.0)
+
+	cmd := newDiffCmd()
+	cmd.SetArgs([]string{"--base", base, "-f", "xml", "github.com/harakeishi/go-solid-score/differ"})
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for unknown format, got nil")
+	}
+	if !strings.Contains(err.Error(), "unknown format") {
+		t.Errorf("error should mention unknown format, got: %v", err)
 	}
 }

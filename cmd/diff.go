@@ -12,15 +12,22 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var (
-	diffBase      string
-	diffMaxDrop   float64
-	diffMinScore  float64
-	diffFailOnReg bool
-	diffFormat    string
-)
+// diffFlags holds the parsed flags for one invocation of the diff command.
+// Keeping them in a struct owned by newDiffCmd (rather than package globals)
+// means each command instance has its own state — safe for parallel tests and
+// free of hidden shared mutation between root and diff.
+type diffFlags struct {
+	base      string
+	maxDrop   float64
+	minScore  float64
+	failOnReg bool
+	format    string
+	cfgFile   string
+}
 
 func newDiffCmd() *cobra.Command {
+	var f diffFlags
+
 	cmd := &cobra.Command{
 		Use:   "diff [packages...]",
 		Short: "Compare current SOLID scores against a baseline JSON",
@@ -28,17 +35,19 @@ func newDiffCmd() *cobra.Command {
 			"against a baseline JSON (produced earlier with `-f json`), reporting " +
 			"regressions, improvements, new and removed targets.",
 		Args: cobra.ArbitraryArgs,
-		RunE: runDiff,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runDiff(&f, args)
+		},
 		// A detected regression is a normal outcome, not a usage error, so
 		// don't print the help/usage text on a non-nil return.
 		SilenceUsage: true,
 	}
-	cmd.Flags().StringVar(&diffBase, "base", "", "Baseline JSON file to compare against (required)")
-	cmd.Flags().Float64Var(&diffMaxDrop, "max-drop", 5.0, "A total drop greater than this is a regression")
-	cmd.Flags().Float64Var(&diffMinScore, "min-score", 0, "A new target below this is NEW-LOW (0 disables)")
-	cmd.Flags().BoolVar(&diffFailOnReg, "fail-on-regression", false, "Exit 1 if any regression or new-low exists")
-	cmd.Flags().StringVarP(&diffFormat, "format", "f", "text", "Output format: text, json, markdown")
-	cmd.Flags().StringVarP(&cfgFile, "config", "c", ".go-solid-score.yaml", "Config file path")
+	cmd.Flags().StringVar(&f.base, "base", "", "Baseline JSON file to compare against (required)")
+	cmd.Flags().Float64Var(&f.maxDrop, "max-drop", 5.0, "A total drop greater than this is a regression")
+	cmd.Flags().Float64Var(&f.minScore, "min-score", 0, "A new target below this is NEW-LOW (0 disables)")
+	cmd.Flags().BoolVar(&f.failOnReg, "fail-on-regression", false, "Exit 1 if any regression or new-low exists")
+	cmd.Flags().StringVarP(&f.format, "format", "f", "text", "Output format: text, json, markdown")
+	cmd.Flags().StringVarP(&f.cfgFile, "config", "c", ".go-solid-score.yaml", "Config file path")
 	_ = cmd.MarkFlagRequired("base")
 	return cmd
 }
@@ -73,8 +82,16 @@ func resultsToSnapshots(results []*scorer.ScoreResult) []differ.Snapshot {
 	return snaps
 }
 
-func runDiff(cmd *cobra.Command, args []string) error {
-	cfg, err := config.Load(cfgFile)
+func runDiff(f *diffFlags, args []string) error {
+	// Validate the format before doing any analysis work so an unknown format
+	// fails fast rather than after scoring.
+	switch f.format {
+	case "text", "json", "markdown":
+	default:
+		return fmt.Errorf("unknown format %q (want text, json, or markdown)", f.format)
+	}
+
+	cfg, err := config.Load(f.cfgFile)
 	if err != nil {
 		return fmt.Errorf("loading config: %w", err)
 	}
@@ -84,7 +101,7 @@ func runDiff(cmd *cobra.Command, args []string) error {
 		patterns = args
 	}
 
-	base, err := loadBaseline(diffBase)
+	base, err := loadBaseline(f.base)
 	if err != nil {
 		return err
 	}
@@ -96,26 +113,24 @@ func runDiff(cmd *cobra.Command, args []string) error {
 	head := resultsToSnapshots(headResults)
 
 	report := differ.Diff(base, head, differ.Options{
-		MaxDrop:  diffMaxDrop,
-		MinScore: diffMinScore,
+		MaxDrop:  f.maxDrop,
+		MinScore: f.minScore,
 	})
 
 	var out string
-	switch diffFormat {
+	switch f.format {
 	case "json":
 		out = formatter.FormatDiffJSON(report)
 	case "markdown":
 		out = formatter.FormatDiffMarkdown(report)
-	case "text":
-		out = formatter.FormatDiffText(report, diffBase, diffMinScore)
-	default:
-		return fmt.Errorf("unknown format %q (want text, json, or markdown)", diffFormat)
+	default: // "text" — already validated above
+		out = formatter.FormatDiffText(report, f.base, f.minScore)
 	}
 	if _, err := fmt.Fprint(os.Stdout, out); err != nil {
 		return fmt.Errorf("writing output: %w", err)
 	}
 
-	if diffFailOnReg && report.Regressed {
+	if f.failOnReg && report.Regressed {
 		return fmt.Errorf("regression detected")
 	}
 	return nil
