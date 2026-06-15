@@ -168,7 +168,19 @@ Score = (weighted interface deps / weighted total deps) × 100
 | Constructor params | 1.0 |
 | Exported method params | 0.3 |
 
-Constructor accepting interfaces earns +15 bonus. Standard library types and user-configured whitelist types are excluded.
+Constructor accepting interfaces earns +15 bonus. Collections of an interface
+(e.g. `[]Handler`) count as abstraction dependencies.
+
+Only *owned collaborators* count toward the ratio. The following are **not**
+treated as dependencies, because penalizing them produced false positives on
+idiomatic aggregate/config types: standard-library and user-whitelisted types
+(including collections of them), function-typed fields (callbacks/strategies),
+value/data types such as `map`/`slice`/named aliases like `type FieldMap …`,
+and self-references (recursive/tree structures). A type that owns no structural
+dependency at all is reported as *DIP not applicable* (neutral score, low
+confidence) rather than penalized via its method parameters. See
+[`docs/scoring-analysis.md`](docs/scoring-analysis.md) for the benchmarking that
+motivated these rules.
 
 </details>
 

@@ -27,6 +27,13 @@ type ParamInfo struct {
 	Name     string
 	TypeName string
 	IsIface  bool
+	// IsFunc reports whether the parameter's (unwrapped) type is a function
+	// type (callback/strategy) rather than a concrete collaborator.
+	IsFunc bool
+	// IsValue reports whether the parameter's type is fundamentally a
+	// value/data type (basic, slice, array, map, or channel) rather than a
+	// struct or interface collaborator.
+	IsValue bool
 }
 
 // ReturnInfo represents a function/method return type.
