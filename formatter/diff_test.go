@@ -13,7 +13,11 @@ func sampleReport() differ.Report {
 	f := func(v float64) *float64 { return &v }
 	return differ.Report{
 		Entries: []differ.Entry{
-			{ID: "pkg.Reg", Name: "Reg", Package: "pkg", Status: differ.StatusRegressed, Base: f(72), Head: f(58)},
+			{ID: "pkg.Reg", Name: "Reg", Package: "pkg", Status: differ.StatusRegressed, Base: f(72), Head: f(58),
+				PrincipleDeltas: []differ.PrincipleDelta{
+					{Principle: "OCP", Base: 100, Head: 50},
+					{Principle: "SRP", Base: 60, Head: 55},
+				}},
 			{ID: "pkg.New", Name: "New", Package: "pkg", Status: differ.StatusNewLow, Head: f(45)},
 			{ID: "pkg.Same", Name: "Same", Package: "pkg", Status: differ.StatusUnchanged, Base: f(80), Head: f(80)},
 		},
@@ -41,6 +45,10 @@ func TestFormatDiffText(t *testing.T) {
 	if strings.Contains(out, "UNCHANGED  pkg.Same") {
 		t.Errorf("UNCHANGED should be summarized, not listed:\n%s", out)
 	}
+	// The regressed line must explain which principles moved.
+	if !strings.Contains(out, "OCP 100.0->50.0") {
+		t.Errorf("regressed line should show the per-principle breakdown:\n%s", out)
+	}
 }
 
 func TestFormatDiffMarkdown(t *testing.T) {
@@ -53,6 +61,10 @@ func TestFormatDiffMarkdown(t *testing.T) {
 	}
 	if !strings.Contains(out, "<details>") {
 		t.Errorf("missing details fold:\n%s", out)
+	}
+	// The regressed row must explain which principles moved.
+	if !strings.Contains(out, "OCP") || !strings.Contains(out, "100.0") {
+		t.Errorf("regressed row should show the per-principle breakdown:\n%s", out)
 	}
 }
 

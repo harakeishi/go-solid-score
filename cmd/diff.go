@@ -66,6 +66,9 @@ func loadBaseline(path string) ([]differ.Snapshot, error) {
 	for _, r := range doc.Results {
 		snaps = append(snaps, differ.Snapshot{
 			ID: r.ID, Name: r.Name, Package: r.Package, Total: r.Total,
+			Principles: map[string]float64{
+				"SRP": r.SRP, "OCP": r.OCP, "LSP": r.LSP, "ISP": r.ISP, "DIP": r.DIP,
+			},
 		})
 	}
 	return snaps, nil
@@ -75,8 +78,13 @@ func loadBaseline(path string) ([]differ.Snapshot, error) {
 func resultsToSnapshots(results []*scorer.ScoreResult) []differ.Snapshot {
 	snaps := make([]differ.Snapshot, 0, len(results))
 	for _, r := range results {
+		principles := make(map[string]float64, len(r.Scores))
+		for p, score := range r.Scores {
+			principles[string(p)] = score
+		}
 		snaps = append(snaps, differ.Snapshot{
 			ID: r.TargetID(), Name: r.TargetName, Package: r.TargetPkg, Total: r.Total,
+			Principles: principles,
 		})
 	}
 	return snaps

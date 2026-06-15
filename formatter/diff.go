@@ -60,6 +60,19 @@ func summaryLine(r differ.Report) string {
 	return strings.Join(parts, ", ")
 }
 
+// principleBreakdown renders an entry's per-principle changes as
+// "OCP 100.0->50.0 (-50.0), SRP 60.0->55.0 (-5.0)". Empty when there are none.
+func principleBreakdown(e differ.Entry) string {
+	if len(e.PrincipleDeltas) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(e.PrincipleDeltas))
+	for _, d := range e.PrincipleDeltas {
+		parts = append(parts, fmt.Sprintf("%s %.1f->%.1f (%+.1f)", d.Principle, d.Base, d.Head, d.Delta()))
+	}
+	return strings.Join(parts, ", ")
+}
+
 // FormatDiffText renders a human-readable diff report. UNCHANGED targets are
 // summarized in the count line rather than listed. minScore is shown next to
 // NEW-LOW entries to make the violated floor explicit.
@@ -74,6 +87,9 @@ func FormatDiffText(r differ.Report, basePath string, minScore float64) string {
 		case differ.StatusRegressed, differ.StatusImproved:
 			fmt.Fprintf(&b, "%-10s %s  %.1f -> %.1f (%+.1f)\n",
 				e.Status, e.ID, *e.Base, *e.Head, e.Diff())
+			if bd := principleBreakdown(e); bd != "" {
+				fmt.Fprintf(&b, "  ↳ %s\n", bd)
+			}
 		case differ.StatusNewLow:
 			fmt.Fprintf(&b, "%-10s %s  %.1f (< min %.1f)\n", e.Status, e.ID, *e.Head, minScore)
 		case differ.StatusNew:
@@ -106,11 +122,16 @@ func FormatDiffMarkdown(r differ.Report) string {
 		if e.Base != nil && e.Head != nil {
 			diff = fmt.Sprintf("%+.1f", e.Diff())
 		}
-		fmt.Fprintf(&b, "| %s %s | `%s` | %s | %s | %s |\n",
-			statusEmoji[e.Status], e.Status, e.ID, base, head, diff)
+		principles := "–"
+		if bd := principleBreakdown(e); bd != "" {
+			principles = bd
+		}
+		fmt.Fprintf(&b, "| %s %s | `%s` | %s | %s | %s | %s |\n",
+			statusEmoji[e.Status], e.Status, e.ID, base, head, diff, principles)
 	}
 
-	b.WriteString("| | target | base | head | diff |\n|--|--|--|--|--|\n")
+	header := "| | target | base | head | diff | principles |\n|--|--|--|--|--|--|\n"
+	b.WriteString(header)
 	for _, e := range sortedEntries(r) {
 		if e.Status == differ.StatusUnchanged {
 			continue
@@ -121,7 +142,7 @@ func FormatDiffMarkdown(r differ.Report) string {
 	if r.Counts[differ.StatusUnchanged] > 0 {
 		fmt.Fprintf(&b, "\n<details><summary>All targets (incl. %d unchanged)</summary>\n\n",
 			r.Counts[differ.StatusUnchanged])
-		b.WriteString("| | target | base | head | diff |\n|--|--|--|--|--|\n")
+		b.WriteString(header)
 		for _, e := range sortedEntries(r) {
 			writeRow(e)
 		}
@@ -130,15 +151,24 @@ func FormatDiffMarkdown(r differ.Report) string {
 	return b.String()
 }
 
+// diffPrincipleDelta is the machine-readable per-principle change.
+type diffPrincipleDelta struct {
+	Principle string  `json:"principle"`
+	Base      float64 `json:"base"`
+	Head      float64 `json:"head"`
+	Diff      float64 `json:"diff"`
+}
+
 // diffJSONResult is the machine-readable per-target diff record.
 type diffJSONResult struct {
-	ID      string   `json:"id"`
-	Name    string   `json:"name"`
-	Package string   `json:"package"`
-	Status  string   `json:"status"`
-	Base    *float64 `json:"base"`
-	Head    *float64 `json:"head"`
-	Diff    *float64 `json:"diff"`
+	ID         string               `json:"id"`
+	Name       string               `json:"name"`
+	Package    string               `json:"package"`
+	Status     string               `json:"status"`
+	Base       *float64             `json:"base"`
+	Head       *float64             `json:"head"`
+	Diff       *float64             `json:"diff"`
+	Principles []diffPrincipleDelta `json:"principles,omitempty"`
 }
 
 // FormatDiffJSON renders the diff report as machine-readable JSON.
@@ -167,6 +197,11 @@ func FormatDiffJSON(r differ.Report) string {
 		if e.Base != nil && e.Head != nil {
 			dv := e.Diff()
 			jr.Diff = &dv
+		}
+		for _, pd := range e.PrincipleDeltas {
+			jr.Principles = append(jr.Principles, diffPrincipleDelta{
+				Principle: pd.Principle, Base: pd.Base, Head: pd.Head, Diff: pd.Delta(),
+			})
 		}
 		d.Results = append(d.Results, jr)
 	}
