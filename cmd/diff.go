@@ -106,8 +106,10 @@ func runDiff(cmd *cobra.Command, args []string) error {
 		out = formatter.FormatDiffJSON(report)
 	case "markdown":
 		out = formatter.FormatDiffMarkdown(report)
+	case "text":
+		out = formatter.FormatDiffText(report, diffBase, diffMinScore)
 	default:
-		out = formatter.FormatDiffText(report, diffBase)
+		return fmt.Errorf("unknown format %q (want text, json, or markdown)", diffFormat)
 	}
 	if _, err := fmt.Fprint(os.Stdout, out); err != nil {
 		return fmt.Errorf("writing output: %w", err)

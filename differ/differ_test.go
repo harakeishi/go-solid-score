@@ -74,6 +74,19 @@ func TestDiff_MaxDropBoundary(t *testing.T) {
 	}
 }
 
+func TestDiff_MaxDropFloatNoise(t *testing.T) {
+	// 80.0 - 79.7 == 0.30000000000000004 in float64. With maxDrop 0.3 the raw
+	// comparison 0.3000...4 > 0.3 would wrongly flag a regression; quantizing
+	// the drop to 0.1 keeps it UNCHANGED.
+	base := []differ.Snapshot{snap("pkg.A", 80.0)}
+	head := []differ.Snapshot{snap("pkg.A", 79.7)}
+
+	r := differ.Diff(base, head, differ.Options{MaxDrop: 0.3})
+	if got := statusOf(r, "pkg.A"); got != differ.StatusUnchanged {
+		t.Errorf("float-noise drop of exactly maxDrop must be UNCHANGED, got %q", got)
+	}
+}
+
 func TestDiff_MinScoreDisabled(t *testing.T) {
 	head := []differ.Snapshot{snap("pkg.New", 10)}
 	r := differ.Diff(nil, head, differ.Options{MaxDrop: 5, MinScore: 0})

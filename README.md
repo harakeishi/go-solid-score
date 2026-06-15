@@ -227,6 +227,11 @@ Targets are matched by their stable `id`, so renames and file moves do not
 produce false regressions. Each target is classified as REGRESSED, IMPROVED,
 UNCHANGED, NEW, NEW-LOW, or REMOVED.
 
+The stable `id` requires a resolvable package import path; for code that does
+not type-check (unresolved packages), the `id` falls back to a file-based key
+and a moved target may appear as a REMOVED/NEW pair. Run `diff` on buildable
+code for accurate matching.
+
 | Flag | Default | Meaning |
 |------|---------|---------|
 | `--base` | (required) | Baseline JSON to compare against |

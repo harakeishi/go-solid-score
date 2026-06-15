@@ -61,8 +61,9 @@ func summaryLine(r differ.Report) string {
 }
 
 // FormatDiffText renders a human-readable diff report. UNCHANGED targets are
-// summarized in the count line rather than listed.
-func FormatDiffText(r differ.Report, basePath string) string {
+// summarized in the count line rather than listed. minScore is shown next to
+// NEW-LOW entries to make the violated floor explicit.
+func FormatDiffText(r differ.Report, basePath string, minScore float64) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "go-solid-score diff (base: %s)\n", basePath)
 	b.WriteString(strings.Repeat("=", 52) + "\n")
@@ -74,7 +75,7 @@ func FormatDiffText(r differ.Report, basePath string) string {
 			fmt.Fprintf(&b, "%-10s %s  %.1f -> %.1f (%+.1f)\n",
 				e.Status, e.ID, *e.Base, *e.Head, e.Diff())
 		case differ.StatusNewLow:
-			fmt.Fprintf(&b, "%-10s %s  %.1f (< min)\n", e.Status, e.ID, *e.Head)
+			fmt.Fprintf(&b, "%-10s %s  %.1f (< min %.1f)\n", e.Status, e.ID, *e.Head, minScore)
 		case differ.StatusNew:
 			fmt.Fprintf(&b, "%-10s %s  %.1f\n", e.Status, e.ID, *e.Head)
 		case differ.StatusRemoved:

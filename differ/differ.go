@@ -3,6 +3,8 @@
 // new-low, or removed. The core Diff function is pure: it performs no I/O.
 package differ
 
+import "math"
+
 // Snapshot is the minimal projection of a scored target needed for diffing.
 type Snapshot struct {
 	ID      string
@@ -76,8 +78,13 @@ func Diff(base, head []Snapshot, opts Options) Report {
 		if b, ok := baseByID[h.ID]; ok {
 			bv := b.Total
 			e.Base = &bv
+			// Quantize the drop to 0.1 (scores are already rounded to one
+			// decimal at scoring time) before comparing, so floating-point
+			// representation noise can't tip a target across the maxDrop
+			// boundary in either direction.
+			drop := math.Round((b.Total-h.Total)*10) / 10
 			switch {
-			case b.Total-h.Total > opts.MaxDrop:
+			case drop > opts.MaxDrop:
 				e.Status = StatusRegressed
 			case h.Total > b.Total:
 				e.Status = StatusImproved

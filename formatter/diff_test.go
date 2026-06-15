@@ -23,7 +23,7 @@ func sampleReport() differ.Report {
 }
 
 func TestFormatDiffText(t *testing.T) {
-	out := formatter.FormatDiffText(sampleReport(), "base.json")
+	out := formatter.FormatDiffText(sampleReport(), "base.json", 70)
 	if !strings.Contains(out, "REGRESSED") || !strings.Contains(out, "pkg.Reg") {
 		t.Errorf("missing regressed line:\n%s", out)
 	}
@@ -32,6 +32,10 @@ func TestFormatDiffText(t *testing.T) {
 	}
 	if !strings.Contains(out, "1 regressed") {
 		t.Errorf("missing summary counts:\n%s", out)
+	}
+	// NEW-LOW must show the violated floor.
+	if !strings.Contains(out, "< min 70.0") {
+		t.Errorf("NEW-LOW line should show the min threshold:\n%s", out)
 	}
 	// UNCHANGED should not be listed individually.
 	if strings.Contains(out, "UNCHANGED  pkg.Same") {
