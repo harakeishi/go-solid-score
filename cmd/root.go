@@ -8,6 +8,7 @@ import (
 	"github.com/harakeishi/go-solid-score/analyzer"
 	"github.com/harakeishi/go-solid-score/config"
 	"github.com/harakeishi/go-solid-score/formatter"
+	"github.com/harakeishi/go-solid-score/model"
 	"github.com/harakeishi/go-solid-score/parser"
 	"github.com/harakeishi/go-solid-score/scorer"
 	"github.com/spf13/cobra"
@@ -37,6 +38,7 @@ func newRootCmd() *cobra.Command {
 	cmd.Version = version
 
 	cmd.AddCommand(newDiffCmd())
+	cmd.AddCommand(newEvaluateCmd())
 
 	return cmd
 }
@@ -102,12 +104,23 @@ func run(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// analyze parses the given patterns and scores every target, applying the
-// scoring rules from cfg. It is the shared core used by both `run` and `diff`.
-func analyze(cfg *config.Config, patterns []string) ([]*scorer.ScoreResult, error) {
+// parsePackages parses the given patterns into model packages. It wraps
+// parser.Parse with a consistent error so callers needing the raw packages
+// (e.g. evaluate, for label collection) share one parse path.
+func parsePackages(patterns []string) ([]*model.PackageInfo, error) {
 	pkgs, err := parser.Parse(patterns)
 	if err != nil {
 		return nil, fmt.Errorf("parsing packages: %w", err)
+	}
+	return pkgs, nil
+}
+
+// analyze parses the given patterns and scores every target, applying the
+// scoring rules from cfg. It is the shared core used by both `run` and `diff`.
+func analyze(cfg *config.Config, patterns []string) ([]*scorer.ScoreResult, error) {
+	pkgs, err := parsePackages(patterns)
+	if err != nil {
+		return nil, err
 	}
 
 	analyzers := []analyzer.Analyzer{
