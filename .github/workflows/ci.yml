@@ -31,3 +31,18 @@ jobs:
         with:
           name: coverage
           path: coverage.out
+
+  # Accuracy gate: fail if the scorer regressed against the committed baseline —
+  # a known violation now missed (recall floor) or a sound type newly flagged
+  # (new false positive). This is the recall-non-regression check the
+  # accuracy-improvement design (rev3) introduced: past calibration only ever
+  # relaxed penalties (improving precision) without measuring whether it started
+  # missing real violations. See scripts/evaluate.sh and docs/scoring-analysis.md.
+  accuracy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: scripts/evaluate.sh

@@ -25,6 +25,8 @@ type evaluateFlags struct {
 	bootstrap int
 	seed      int64
 	cfgFile   string
+	baseline  string
+	failOnReg bool
 }
 
 func newEvaluateCmd() *cobra.Command {
@@ -51,6 +53,8 @@ func newEvaluateCmd() *cobra.Command {
 	cmd.Flags().IntVar(&f.bootstrap, "bootstrap", 1000, "Bootstrap resamples for the F1 confidence interval")
 	cmd.Flags().Int64Var(&f.seed, "seed", defaultBootstrapSeed, "Bootstrap RNG seed (fixed for reproducibility)")
 	cmd.Flags().StringVarP(&f.cfgFile, "config", "c", ".go-solid-score.yaml", "Config file path")
+	cmd.Flags().StringVar(&f.baseline, "baseline", "", "Committed baseline report JSON to check for regressions against")
+	cmd.Flags().BoolVar(&f.failOnReg, "fail-on-regression", false, "Exit 1 if any principle regressed below --baseline (recall floor or new false positive)")
 	return cmd
 }
 
@@ -86,6 +90,17 @@ func runEvaluate(f *evaluateFlags, args []string) error {
 		return err
 	}
 
+	// Guard against a hollow evaluation: if no principle was measured, the
+	// label/score join produced nothing (e.g. patterns matched no annotated
+	// packages, or shell quoting collapsed several patterns into one). Returning
+	// an empty report here would let a regression gate pass green having checked
+	// nothing — the worst failure mode for an accuracy harness — so fail loudly.
+	if len(report.PerPrinciple) == 0 {
+		return fmt.Errorf("no labels were measured for patterns %v; "+
+			"the packages matched no `// solid:want` labels (note: the go tool "+
+			"excludes `testdata` from `./...` globs — list those packages explicitly)", patterns)
+	}
+
 	out, err := formatEvaluation(report, f.format)
 	if err != nil {
 		return err
@@ -93,7 +108,46 @@ func runEvaluate(f *evaluateFlags, args []string) error {
 	if _, err := fmt.Fprint(os.Stdout, out); err != nil {
 		return fmt.Errorf("writing output: %w", err)
 	}
+
+	// Baseline regression check. A detected regression is a normal CI outcome,
+	// not a usage error, so SilenceUsage keeps the help text from printing on a
+	// non-nil return.
+	if f.baseline != "" {
+		regs, err := checkRegressions(report, f.baseline)
+		if err != nil {
+			return err
+		}
+		if len(regs) > 0 {
+			printRegressions(regs)
+			if f.failOnReg {
+				return fmt.Errorf("%d principle regression(s) against baseline %s", len(regs), f.baseline)
+			}
+		}
+	}
 	return nil
+}
+
+// checkRegressions loads the committed baseline and compares the current report
+// against it.
+func checkRegressions(report eval.Report, baselinePath string) ([]eval.Regression, error) {
+	data, err := os.ReadFile(baselinePath)
+	if err != nil {
+		return nil, fmt.Errorf("reading baseline: %w", err)
+	}
+	base, err := eval.LoadBaselineJSON(data)
+	if err != nil {
+		return nil, err
+	}
+	return eval.CompareToBaseline(eval.NewReportJSON(report), base), nil
+}
+
+// printRegressions writes the regressions to stderr so they are visible in CI
+// logs without polluting the report on stdout.
+func printRegressions(regs []eval.Regression) {
+	fmt.Fprintln(os.Stderr, "accuracy regression(s) against baseline:")
+	for _, r := range regs {
+		fmt.Fprintf(os.Stderr, "  [%s] %s: %s\n", r.Kind, r.Principle, r.Detail)
+	}
 }
 
 // buildEvaluation parses, scores, collects labels (inline + optional YAML) and

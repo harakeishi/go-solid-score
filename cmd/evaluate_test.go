@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -168,6 +169,82 @@ func TestEvaluate_UnknownFormat(t *testing.T) {
 	err := cmd.Execute()
 	if err == nil || !strings.Contains(err.Error(), "unknown format") {
 		t.Errorf("expected unknown-format error, got: %v", err)
+	}
+}
+
+// writeBaselineFrom runs evaluate to capture the current report as a baseline
+// JSON file, optionally mutating it first, and returns its path.
+func writeBaselineFrom(t *testing.T, mutate func(*eval.ReportJSON)) string {
+	t.Helper()
+	out, err := runEvaluateCapture(t, []string{"-f", "json"}, testdataPkgs...)
+	if err != nil {
+		t.Fatalf("capturing baseline failed: %v", err)
+	}
+	var rep eval.ReportJSON
+	if err := json.Unmarshal([]byte(out), &rep); err != nil {
+		t.Fatalf("baseline JSON did not parse: %v", err)
+	}
+	if mutate != nil {
+		mutate(&rep)
+	}
+	data, err := json.MarshalIndent(rep, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "baseline.json")
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// TestEvaluate_BaselineNoRegression: evaluating against a baseline captured from
+// the same scorer reports no regression and exits cleanly.
+func TestEvaluate_BaselineNoRegression(t *testing.T) {
+	base := writeBaselineFrom(t, nil)
+	args := append([]string{"--baseline", base, "--fail-on-regression", "-f", "json"}, testdataPkgs...)
+	if _, err := runEvaluateCapture(t, args); err != nil {
+		t.Errorf("self-baseline should not regress, got error: %v", err)
+	}
+}
+
+// TestEvaluate_BaselineRecallRegression: if the baseline claims a higher TP than
+// the scorer now produces (a known violation now missed), --fail-on-regression
+// must exit with an error.
+func TestEvaluate_BaselineRecallRegression(t *testing.T) {
+	base := writeBaselineFrom(t, func(r *eval.ReportJSON) {
+		isp := r.PerPrinciple["ISP"]
+		isp.TP++ // pretend ISP used to catch one more violation than it does now
+		r.PerPrinciple["ISP"] = isp
+	})
+	args := append([]string{"--baseline", base, "--fail-on-regression", "-f", "json"}, testdataPkgs...)
+	_, err := runEvaluateCapture(t, args)
+	if err == nil || !strings.Contains(err.Error(), "regression") {
+		t.Errorf("expected a recall regression error, got: %v", err)
+	}
+}
+
+// TestEvaluate_BaselineWithoutFailOnRegression: a regression is reported but,
+// without --fail-on-regression, the command still exits 0.
+func TestEvaluate_BaselineWithoutFailOnRegression(t *testing.T) {
+	base := writeBaselineFrom(t, func(r *eval.ReportJSON) {
+		isp := r.PerPrinciple["ISP"]
+		isp.TP++
+		r.PerPrinciple["ISP"] = isp
+	})
+	args := append([]string{"--baseline", base, "-f", "json"}, testdataPkgs...)
+	if _, err := runEvaluateCapture(t, args); err != nil {
+		t.Errorf("without --fail-on-regression, expected exit 0, got: %v", err)
+	}
+}
+
+// TestEvaluate_EmptyMatchGuard: patterns that match no labels must fail loudly
+// rather than producing a hollow, all-green report.
+func TestEvaluate_EmptyMatchGuard(t *testing.T) {
+	// A package with no `// solid:want` labels yields an empty report.
+	_, err := runEvaluateCapture(t, nil, "github.com/harakeishi/go-solid-score/differ")
+	if err == nil || !strings.Contains(err.Error(), "no labels were measured") {
+		t.Errorf("expected an empty-match guard error, got: %v", err)
 	}
 }
 

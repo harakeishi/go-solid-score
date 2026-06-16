@@ -287,6 +287,74 @@ See [`.github/workflows/solid-diff.yml`](.github/workflows/solid-diff.yml) for a
 PR-comment workflow (requires `pull-requests: write`; fork PRs fall back to a
 job summary).
 
+## Measuring scoring accuracy (precision / recall)
+
+`diff` guards against *score* regressions on real code. A separate concern is
+whether the scorer's verdicts are *correct* — and in particular whether it has
+started **missing** genuine violations (a recall regression). Two complementary
+harnesses cover the two error directions:
+
+| Harness | Measures | Ground truth | Direction it protects |
+|---------|----------|--------------|-----------------------|
+| [`scripts/benchmark.sh`](scripts/benchmark.sh) | mean per-principle scores over pinned OSS libraries | "good libraries score well" assumption | **precision** — flags over-penalizing sound code |
+| [`scripts/evaluate.sh`](scripts/evaluate.sh) (`gss evaluate`) | per-principle precision/recall/F1 vs labelled `testdata` | inline `// solid:want` labels | **recall** — flags missing genuine violations |
+
+The split matters: past calibration only ever *relaxed* penalties (improving
+precision) without ever measuring whether the tool started missing real
+violations. `evaluate` makes recall measurable so relaxations can be checked for
+that side effect.
+
+### Ground-truth labels
+
+Each labelled `testdata` type carries its expected verdict inline, following the
+inline-annotation convention of SonarSource and Checkstyle rule tests:
+
+```go
+// FatImpl has a bloated public interface.
+// solid:want ISP=violation reason="11 public methods forcing clients to depend on methods they don't use"
+type FatImpl struct { /* ... */ }
+```
+
+`PRINCIPLE=violation|ok|na`, an optional `reason`, and an optional
+`split=train|test` (default `test`). `train` labels are used while calibrating
+heuristics and are excluded from the reported baseline so accuracy is never
+reported on the same types used to tune it. Corpora that cannot be annotated
+inline (e.g. third-party OSS) can supply an external YAML label file via
+`--labels`.
+
+### Running and gating
+
+```bash
+# Per-principle P/R/F table with bootstrap F1 confidence intervals
+go-solid-score evaluate ./testdata/srp ./testdata/ocp ./testdata/lsp ./testdata/isp ./testdata/dip
+
+# The CI gate: fail if any principle regressed against the committed baseline
+scripts/evaluate.sh
+
+# After an *intended* accuracy change, regenerate and review the baseline
+scripts/evaluate.sh --update   # then commit testdata/eval_baseline.json
+```
+
+The regression check compares the per-principle confusion matrix against the
+committed [`testdata/eval_baseline.json`](testdata/eval_baseline.json) and fails
+when a known violation stops being caught (recall floor breached, `TP` drops) or
+a sound type starts being flagged (`FP` rises). Following the practice of
+static-analysis rule tests (PMD, Semgrep, `go/analysis`), the gate works on
+**absolute case counts**, not rates — the per-principle samples are too small for
+a rate delta to separate a real regression from one case of natural wobble. The
+bootstrap F1 confidence interval is reported for human context but is **not** a
+fail condition, because percentile intervals are systematically too narrow at
+these sample sizes.
+
+> **Note:** the testdata packages are listed explicitly rather than with a
+> `./...` glob. The go tool excludes directories named `testdata` from `./...`,
+> so a glob would silently match nothing and the gate would pass having measured
+> nothing. `gss evaluate` errors out if its patterns match no labels, to make
+> that mistake loud rather than silent.
+
+The CI [`accuracy` job](.github/workflows/ci.yml) runs `scripts/evaluate.sh` on
+every PR.
+
 ## golangci-lint Integration
 
 go-solid-score can be used as a `go/analysis` plugin with golangci-lint:
