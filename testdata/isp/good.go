@@ -17,6 +17,7 @@ type ReadWriter interface {
 }
 
 // SimpleReader implements only the Reader interface.
+// solid:want ISP=ok reason="single-method public surface (Read); minimal client coupling"
 type SimpleReader struct {
 	data []byte
 	pos  int

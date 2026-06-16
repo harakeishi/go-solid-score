@@ -11,6 +11,7 @@ package srp
 // cohesion term for such large aggregates, while the method-count/complexity
 // penalties still keep the score moderate (below the SRP threshold) rather than
 // perfect — an honest "large, but not incohesive" verdict.
+// solid:want SRP=na reason="facade vs true god-object is structurally ambiguous (same LCOM4=2, large avg group); classification deferred to Phase 4 (design §7)"
 type LargeFacade struct {
 	reqURL   string
 	reqBody  []byte
@@ -48,6 +49,7 @@ func (f *LargeFacade) HasRespBody() bool          { return len(f.respBody) > 0 }
 // a large structured aggregate, so — unlike LargeFacade — its SRP confidence
 // must stay high: the confidence drop is reserved for substantially attenuated
 // aggregates, not for any type that is fractionally attenuated.
+// solid:want SRP=ok reason="two small cohesive groups (a-methods, b-methods); minor split, not the many-small-islands god-object smell"
 type SmallSplit struct {
 	a int
 	b int

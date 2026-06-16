@@ -7,6 +7,7 @@ type Saver interface {
 }
 
 // ReadOnlySaver violates LSP by panicking on Save.
+// solid:want LSP=violation reason="Liskov: unconditionally panics in Save, strengthening the precondition so it cannot substitute for Saver"
 type ReadOnlySaver struct{}
 
 func (r *ReadOnlySaver) Save(data []byte) error {
@@ -20,6 +21,7 @@ func (r *ReadOnlySaver) Load(id string) ([]byte, error) {
 // GuardedSaver implements Saver and panics ONLY on invalid input (a fail-fast
 // guard). This is idiomatic Go, not an LSP violation, so it must not be
 // penalized for the panic.
+// solid:want LSP=ok reason="panics are fail-fast guards on invalid input (nil/empty), idiomatic Go preconditions — not an LSP violation"
 type GuardedSaver struct {
 	data map[string][]byte
 }
@@ -40,6 +42,7 @@ func (g *GuardedSaver) Load(id string) ([]byte, error) {
 }
 
 // NoopSaver violates LSP with no-op implementations.
+// solid:want LSP=violation reason="Liskov: Save claims success but persists nothing (silent no-op), weakening the postcondition so it cannot substitute for Saver"
 type NoopSaver struct{}
 
 func (n *NoopSaver) Save(data []byte) error {

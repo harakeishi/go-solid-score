@@ -1,6 +1,7 @@
 package srp
 
 // TaxCalculator is a cohesive struct with all methods accessing the same fields.
+// solid:want SRP=ok reason="all methods access the same rate/discount fields — single cohesive responsibility (LCOM4=1)"
 type TaxCalculator struct {
 	rate     float64
 	discount float64
@@ -27,6 +28,7 @@ func (t *TaxCalculator) EffectiveRate() float64 {
 // field, while Is is a standard errors.Is convention method that only inspects
 // its argument and touches no field. The stateless Is method must not fragment
 // LCOM4 and drag SRP down — the type has a single responsibility.
+// solid:want SRP=ok reason="cohesive error type; the stateless errors.Is convention method is not a second responsibility"
 type ParseError struct {
 	msg string
 }

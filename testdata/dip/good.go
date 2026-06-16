@@ -12,6 +12,7 @@ type Logger interface {
 }
 
 // Service depends on interfaces, not concrete types.
+// solid:want DIP=ok reason="depends on Repository/Logger interfaces injected via constructor — abstractions, not concretions"
 type Service struct {
 	repo   Repository
 	logger Logger

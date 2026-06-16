@@ -6,6 +6,7 @@ import (
 )
 
 // BadService depends on concrete types directly.
+// solid:want DIP=violation reason="Martin DIP: owns concrete *sql.DB and *log.Logger fields instead of abstractions — high-level policy coupled to low-level details"
 type BadService struct {
 	db     *sql.DB
 	logger *log.Logger
