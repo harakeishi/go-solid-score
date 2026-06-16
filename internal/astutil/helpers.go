@@ -5,6 +5,16 @@ import (
 	"go/types"
 )
 
+// docText returns the text of a doc comment group with the comment markers
+// stripped, or "" when the group is nil. It is a thin wrapper over
+// (*ast.CommentGroup).Text so callers can pass a possibly-nil group.
+func docText(g *ast.CommentGroup) string {
+	if g == nil {
+		return ""
+	}
+	return g.Text()
+}
+
 // ReceiverTypeName extracts the type name from a method receiver.
 func ReceiverTypeName(recv *ast.FieldList) string {
 	if recv == nil || len(recv.List) == 0 {

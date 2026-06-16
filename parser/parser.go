@@ -4,6 +4,9 @@ package parser
 
 import (
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"path/filepath"
 
 	"golang.org/x/tools/go/packages"
@@ -21,6 +24,12 @@ func Parse(patterns []string) ([]*model.PackageInfo, error) {
 			packages.NeedTypes |
 			packages.NeedTypesInfo |
 			packages.NeedDeps,
+		// go/packages drops comments by default; keep them so the evaluation
+		// harness can read inline `// solid:want` ground-truth labels from type
+		// doc comments. Other Mode bits are unaffected.
+		ParseFile: func(fset *token.FileSet, filename string, src []byte) (*ast.File, error) {
+			return parser.ParseFile(fset, filename, src, parser.ParseComments|parser.SkipObjectResolution)
+		},
 	}
 
 	pkgs, err := packages.Load(cfg, patterns...)

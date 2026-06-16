@@ -18,12 +18,20 @@ func ExtractDecls(file *ast.File, fpath string, fset *token.FileSet, info *types
 				if !ok {
 					continue
 				}
+				// A single-spec `type X struct{}` attaches its doc comment to the
+				// GenDecl; a grouped `type ( X ...; Y ... )` attaches it to each
+				// TypeSpec. Prefer the spec-level doc, falling back to the decl.
+				doc := docText(ts.Doc)
+				if doc == "" {
+					doc = docText(d.Doc)
+				}
 				switch t := ts.Type.(type) {
 				case *ast.StructType:
 					si := &model.StructInfo{
 						Name: ts.Name.Name,
 						File: fpath,
 						Line: fset.Position(ts.Pos()).Line,
+						Doc:  doc,
 					}
 					if t.Fields != nil {
 						for _, field := range t.Fields.List {
@@ -41,6 +49,7 @@ func ExtractDecls(file *ast.File, fpath string, fset *token.FileSet, info *types
 						Name: ts.Name.Name,
 						File: fpath,
 						Line: fset.Position(ts.Pos()).Line,
+						Doc:  doc,
 					}
 					if t.Methods != nil {
 						for _, m := range t.Methods.List {
