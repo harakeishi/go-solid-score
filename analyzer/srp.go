@@ -64,17 +64,55 @@ func (a *SRPAnalyzer) analyzeStruct(s *model.StructInfo, pkgPath string) Result 
 		r.Confidence = ConfidenceMedium
 	}
 
-	// Compute LCOM4
+	// Compute LCOM4 and convert the cohesion deficit into a penalty.
 	lcom4 := calculateLCOM4(methods)
-	switch {
-	case lcom4 <= 1:
-		// fully cohesive
-	case lcom4 == 2:
-		r.Score -= 40
-		r.Details = append(r.Details, fmt.Sprintf("LCOM4=%d: struct has %d disconnected responsibility groups", lcom4, lcom4))
-	default:
-		r.Score -= 70
-		r.Details = append(r.Details, fmt.Sprintf("LCOM4=%d: struct has %d disconnected responsibility groups", lcom4, lcom4))
+	if lcom4 >= 2 {
+		// Base penalty for the cohesion deficit. It ramps continuously with each
+		// additional disconnected group (40 at 2 groups, +15 per extra group,
+		// capped at 70) rather than stepping straight from 40 to 70 at three
+		// groups. The ramp both adds resolution (a 3-group split now reads as
+		// less severe than a 5-group one) and shrinks the discontinuity in the
+		// final penalty as the group count grows while the average group size
+		// — and thus the attenuation below — moves in the opposite direction.
+		base := baseLCOM4Penalty(lcom4)
+
+		// Graduate the penalty by average component size (methods per group).
+		// The same LCOM4 means very different things at different sizes: two
+		// groups among 3 methods is genuine fragmentation — most methods are
+		// islands — whereas two groups among 70 methods is a large aggregate
+		// whose methods cluster into a couple of cohesive areas (the facade
+		// pattern: cobra.Command, gin.Engine, fasthttp.Request, logrus.Logger).
+		// LCOM4 counts the groups but not their size, so a flat penalty floors
+		// big structured aggregates on the same evidence that flags a small
+		// bag of unrelated methods. The classic SRP smell is *many small*
+		// disconnected pieces, so we attenuate as the average group grows.
+		// Oversized aggregates are still caught by the method-count and
+		// complexity penalties below; this only stops the cohesion term from
+		// double-counting size.
+		avgComp := float64(len(methods)) / float64(lcom4)
+		const loSize, hiSize, minAtten = 3.0, 10.0, 0.25
+		atten := 1.0
+		switch {
+		case avgComp >= hiSize:
+			atten = minAtten
+		case avgComp > loSize:
+			atten = 1.0 - (avgComp-loSize)/(hiSize-loSize)*(1.0-minAtten)
+		}
+
+		penalty := base * atten
+		r.Score -= penalty
+		r.Details = append(r.Details, fmt.Sprintf(
+			"LCOM4=%d over %d methods (avg %.1f methods/group): -%.0f cohesion penalty",
+			lcom4, len(methods), avgComp, penalty))
+
+		// Only a *substantially* attenuated penalty marks a genuine large
+		// structured aggregate (avg group ≳ 7.7 methods); a type that is barely
+		// attenuated is not an aggregate and keeps its confidence. The half-way
+		// attenuation point is the threshold so the confidence drop tracks the
+		// "weak signal" intent rather than firing on any avg group above loSize.
+		if atten <= 0.5 && r.Confidence > ConfidenceMedium {
+			r.Confidence = ConfidenceMedium
+		}
 	}
 
 	// Penalty: total cyclomatic complexity
@@ -101,6 +139,23 @@ func (a *SRPAnalyzer) analyzeStruct(s *model.StructInfo, pkgPath string) Result 
 
 	r.Score = Clamp(r.Score)
 	return r
+}
+
+// baseLCOM4Penalty maps an LCOM4 component count to the base cohesion penalty.
+// It ramps linearly — 40 at two disconnected groups, +15 for each additional
+// group — and saturates at 70. A ramp (rather than a 40→70 step at three
+// groups) gives the metric resolution above three groups and keeps the final,
+// size-attenuated penalty from jumping discontinuously as the group count rises.
+func baseLCOM4Penalty(lcom4 int) float64 {
+	if lcom4 <= 1 {
+		return 0
+	}
+	const at2, perGroup, maxPenalty = 40.0, 15.0, 70.0
+	p := at2 + perGroup*float64(lcom4-2)
+	if p > maxPenalty {
+		p = maxPenalty
+	}
+	return p
 }
 
 // calculateLCOM4 computes the LCOM4 metric: number of connected components
