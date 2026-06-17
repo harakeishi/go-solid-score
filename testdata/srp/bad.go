@@ -6,6 +6,7 @@ import (
 )
 
 // GodStruct has multiple disconnected responsibilities.
+// solid:want SRP=violation reason="Lanza&Marinescu God Class: methods cluster over disjoint field groups (db, logFile, cache) — LCOM4>1, no shared cohesion"
 type GodStruct struct {
 	name    string
 	email   string

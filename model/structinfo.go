@@ -8,6 +8,10 @@ type StructInfo struct {
 	Fields     []*FieldInfo
 	Methods    []*MethodInfo
 	Embeddings []string // embedded type names
+	// Doc is the doc comment attached to the type declaration (without the
+	// leading "// " markers). Empty when the type has no doc comment. Used by
+	// the evaluation harness to read inline `// solid:want` ground-truth labels.
+	Doc string
 }
 
 // FieldInfo represents a single struct field.

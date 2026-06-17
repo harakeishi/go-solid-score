@@ -3,6 +3,7 @@ package ocp
 import "fmt"
 
 // Router uses type switches extensively instead of polymorphism.
+// solid:want OCP=violation reason="Meyer/Martin OCP: branches on concrete types (string/int/float64/[]byte) — adding a new type requires editing Route/Validate/TypeName, not open for extension"
 type Router struct {
 	routes []interface{}
 }

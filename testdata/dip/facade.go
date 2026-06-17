@@ -4,6 +4,7 @@ package dip
 // self-references rather than injected service collaborators. DIP should not
 // penalize it: none of these fields are concrete dependencies that ought to
 // be inverted behind an interface.
+// solid:want DIP=ok reason="fields are value data, callbacks, self-references and an interface slice — none are concrete service collaborators to invert"
 type Tree struct {
 	Name     string            // value
 	tags     map[string]string // value data container
@@ -20,6 +21,7 @@ func NewTree(handlers []Logger) *Tree {
 // Printer owns no collaborators: its only non-value "dependency" is the
 // concrete *Tree supplied to a method at call time. DIP is not structurally
 // applicable here, so the type must not be penalized toward zero.
+// solid:want DIP=na reason="owns no field/constructor dependencies; only a call-time method parameter — DIP not structurally applicable"
 type Printer struct {
 	Indent int
 }
@@ -37,6 +39,7 @@ type stage struct {
 // a value container such as map[string]string, this is a genuine concrete
 // collaborator dependency and DIP should still penalize it (the stages are not
 // behind an interface).
+// solid:want DIP=violation reason="owns []*stage, a collection of a concrete struct collaborator not held behind an interface — a genuine concrete dependency"
 type Pipeline struct {
 	stages []*stage
 }

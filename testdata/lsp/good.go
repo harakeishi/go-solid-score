@@ -8,6 +8,7 @@ type Speaker interface {
 }
 
 // Dog properly implements Speaker.
+// solid:want LSP=ok reason="honours the Speaker contract with a normal return; fully substitutable"
 type Dog struct {
 	name string
 }
@@ -17,6 +18,7 @@ func (d *Dog) Speak() string {
 }
 
 // Cat properly implements Speaker.
+// solid:want LSP=ok reason="honours the Speaker contract with a normal return; fully substitutable"
 type Cat struct {
 	name string
 }
