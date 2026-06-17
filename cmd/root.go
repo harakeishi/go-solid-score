@@ -122,7 +122,14 @@ func analyze(cfg *config.Config, patterns []string) ([]*scorer.ScoreResult, erro
 	if err != nil {
 		return nil, err
 	}
+	return scorePackages(cfg, pkgs), nil
+}
 
+// scorePackages scores already-parsed packages. Splitting it from analyze lets
+// a caller that also needs the parsed packages (e.g. evaluate, which collects
+// inline labels from the same syntax) parse once and feed the result to both,
+// rather than loading — and fully building — the same source twice.
+func scorePackages(cfg *config.Config, pkgs []*model.PackageInfo) []*scorer.ScoreResult {
 	analyzers := []analyzer.Analyzer{
 		analyzer.NewSRPAnalyzer(),
 		analyzer.NewOCPAnalyzer(),
@@ -136,5 +143,5 @@ func analyze(cfg *config.Config, patterns []string) ([]*scorer.ScoreResult, erro
 	for _, pkg := range pkgs {
 		allResults = append(allResults, s.Score(pkg)...)
 	}
-	return allResults, nil
+	return allResults
 }

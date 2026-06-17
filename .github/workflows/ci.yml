@@ -40,6 +40,13 @@ jobs:
   # missing real violations. See scripts/evaluate.sh and docs/scoring-analysis.md.
   accuracy:
     runs-on: ubuntu-latest
+    # The gate loads testdata with go/packages (NeedTypes|NeedDeps), which
+    # fully builds the target source. A cgo preamble would invoke the C
+    # compiler on that source — an arbitrary-code-execution surface if a PR
+    # adds a cgo file under testdata/. Disable cgo so no C toolchain runs;
+    # the SOLID analysis never needs it.
+    env:
+      CGO_ENABLED: "0"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5

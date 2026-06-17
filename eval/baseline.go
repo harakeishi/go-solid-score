@@ -60,6 +60,20 @@ func CompareToBaseline(current, baseline ReportJSON) []Regression {
 					base.TP, cur.TP),
 			})
 		}
+		if cur.RecallDenominator < base.RecallDenominator {
+			// The recall denominator (TP+FN) is the count of known true
+			// violations. A drop with TP held flat means a violation label
+			// silently vanished from the FN side — recall would look unchanged
+			// while the measurement basis shrank, hiding the loss. The harness
+			// exists to catch exactly this kind of silent erosion.
+			regs = append(regs, Regression{
+				Principle: p,
+				Kind:      "recall",
+				Detail: fmt.Sprintf(
+					"known violations (TP+FN) dropped %d -> %d (a violation label vanished; recall is measured against fewer cases)",
+					base.RecallDenominator, cur.RecallDenominator),
+			})
+		}
 		if cur.FP > base.FP {
 			regs = append(regs, Regression{
 				Principle: p,

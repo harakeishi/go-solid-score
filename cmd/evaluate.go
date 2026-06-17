@@ -150,18 +150,28 @@ func printRegressions(regs []eval.Regression) {
 	}
 }
 
-// buildEvaluation parses, scores, collects labels (inline + optional YAML) and
-// joins them into an eval.Report over the chosen split.
+// buildEvaluation parses the patterns once, then derives both the scores and
+// the inline labels from that single parse — so the labels and the scores are
+// guaranteed to describe the same source and the (heavy) go/packages build runs
+// once, not twice. External YAML labels, if any, are appended.
 func buildEvaluation(cfg *config.Config, patterns []string, f *evaluateFlags, split eval.Split) (eval.Report, error) {
-	results, err := analyze(cfg, patterns)
+	pkgs, err := parsePackages(patterns)
 	if err != nil {
 		return eval.Report{}, err
 	}
-	scored := eval.CollectScores(results)
 
-	labels, err := collectLabels(cfg, patterns, f.labels)
+	scored := eval.CollectScores(scorePackages(cfg, pkgs))
+
+	labels, err := eval.CollectDocLabels(pkgs)
 	if err != nil {
-		return eval.Report{}, err
+		return eval.Report{}, fmt.Errorf("collecting inline labels: %w", err)
+	}
+	if f.labels != "" {
+		ext, err := externalLabels(f.labels)
+		if err != nil {
+			return eval.Report{}, err
+		}
+		labels = append(labels, ext...)
 	}
 
 	thresholds := principleThresholds(cfg)
@@ -169,29 +179,18 @@ func buildEvaluation(cfg *config.Config, patterns []string, f *evaluateFlags, sp
 	return eval.BuildReport(labels, scored, thresholds, split, f.bootstrap, f.seed), nil
 }
 
-// collectLabels gathers the inline `solid:want` labels from the source under
-// the given patterns and appends any labels from an external YAML file.
-func collectLabels(cfg *config.Config, patterns []string, yamlPath string) ([]eval.Label, error) {
-	pkgs, err := parsePackages(patterns)
+// externalLabels reads ground-truth labels from an external YAML file (for
+// corpora that cannot be annotated inline).
+func externalLabels(yamlPath string) ([]eval.Label, error) {
+	data, err := os.ReadFile(yamlPath)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("reading label file: %w", err)
 	}
-	labels, err := eval.CollectDocLabels(pkgs)
+	ext, err := eval.ParseYAMLLabels(data)
 	if err != nil {
-		return nil, fmt.Errorf("collecting inline labels: %w", err)
+		return nil, fmt.Errorf("parsing label file %s: %w", yamlPath, err)
 	}
-	if yamlPath != "" {
-		data, err := os.ReadFile(yamlPath)
-		if err != nil {
-			return nil, fmt.Errorf("reading label file: %w", err)
-		}
-		ext, err := eval.ParseYAMLLabels(data)
-		if err != nil {
-			return nil, fmt.Errorf("parsing label file %s: %w", yamlPath, err)
-		}
-		labels = append(labels, ext...)
-	}
-	return labels, nil
+	return ext, nil
 }
 
 // principleThresholds converts the config's string-keyed thresholds into the

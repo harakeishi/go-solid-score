@@ -1,6 +1,7 @@
 package eval_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/harakeishi/go-solid-score/eval"
@@ -54,6 +55,21 @@ func TestCompareToBaseline_ImprovementIsNotRegression(t *testing.T) {
 	cur := report("OCP", 1, 0, 0, 2)  // now caught
 	if regs := eval.CompareToBaseline(cur, base); len(regs) != 0 {
 		t.Errorf("an improvement must not regress, got %+v", regs)
+	}
+}
+
+// TestCompareToBaseline_DenominatorShrinkWithFlatTP: a violation label vanishes
+// from the FN side (TP held flat, FN down) — recall would look unchanged while
+// the measurement basis shrank. This silent erosion must be caught.
+func TestCompareToBaseline_DenominatorShrinkWithFlatTP(t *testing.T) {
+	base := report("OCP", 0, 0, 2, 2) // 2 known violations, both missed (denom 2)
+	cur := report("OCP", 0, 0, 1, 2)  // one violation label removed (denom 1)
+	regs := eval.CompareToBaseline(cur, base)
+	if len(regs) != 1 || regs[0].Kind != "recall" || regs[0].Principle != "OCP" {
+		t.Fatalf("expected one OCP recall regression for the shrunken denominator, got %+v", regs)
+	}
+	if !strings.Contains(regs[0].Detail, "TP+FN") {
+		t.Errorf("regression detail should mention the denominator, got %q", regs[0].Detail)
 	}
 }
 
