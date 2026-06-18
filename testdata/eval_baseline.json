@@ -20,11 +20,11 @@
       "f1": 1,
       "f1_ci_low": 1,
       "f1_ci_high": 1,
-      "recall_denominator": 1,
-      "tp": 1,
+      "recall_denominator": 2,
+      "tp": 2,
       "fp": 0,
       "fn": 0,
-      "tn": 1
+      "tn": 4
     },
     "LSP": {
       "precision": null,
