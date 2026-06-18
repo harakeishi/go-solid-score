@@ -1,6 +1,7 @@
 package isp
 
 // FatInterface forces implementors to depend on methods they don't use.
+// solid:want ISP=violation reason="Martin ISP / Pike 'the bigger the interface, the weaker the abstraction': 11 methods force clients to depend on methods they don't use — the interface-definition recall guard"
 type FatInterface interface {
 	Read(p []byte) (int, error)
 	Write(p []byte) (int, error)
