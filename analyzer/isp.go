@@ -82,7 +82,11 @@ func (a *ISPAnalyzer) analyzeStruct(s *model.StructInfo, pkg *model.PackageInfo)
 		r.Details = append(r.Details, fmt.Sprintf("%d public methods (severely bloated interface)", methodCount))
 	}
 
-	// Check interfaces defined in the same package
+	// Check interfaces defined in the same package.
+	// NOTE: the "large interface" threshold here (mc > 5) intentionally mirrors
+	// the interface-definition scoring in analyzeInterface (mc <= 5 → top score).
+	// If you retune one side's method-count thresholds, revisit the other so the
+	// struct-implements penalty and the interface-definition score stay aligned.
 	for _, iface := range pkg.Interfaces {
 		mc := iface.TotalMethods
 		if mc > 5 {
@@ -145,6 +149,9 @@ func (a *ISPAnalyzer) analyzeInterface(iface *model.InterfaceInfo, pkg *model.Pa
 		Confidence: ConfidenceMedium,
 	}
 
+	// NOTE: these method-count thresholds are mirrored by the struct-side
+	// "large interface" penalty in analyzeStruct (mc > 5). Keep the two in sync
+	// when retuning — see the cross-reference note there.
 	mc := iface.TotalMethods
 	switch {
 	case mc <= 3:
@@ -165,8 +172,17 @@ func (a *ISPAnalyzer) analyzeInterface(iface *model.InterfaceInfo, pkg *model.Pa
 		r.Details = append(r.Details, fmt.Sprintf("%d methods (severely bloated interface)", mc))
 	}
 
-	// Interfaces composed by embedding small role interfaces are ISP-faithful.
-	if len(iface.Embeds) > 0 {
+	// Interfaces composed by embedding small role interfaces are ISP-faithful
+	// (the io.ReadWriteCloser pattern). The bonus is gated on the count of
+	// methods declared *directly* (iface.Methods excludes embedded methods,
+	// unlike iface.TotalMethods): an interface that embeds a role interface yet
+	// still declares many methods of its own is structurally a fat interface,
+	// and a single embed must not rescue it above the violation threshold.
+	// Without this gate, e.g. 10 direct methods + 1 embed scores 40+15=55 and
+	// escapes detection — the embed-bonus false negative. The interfacebloat
+	// linter cannot make this distinction (it counts AST entries); we can,
+	// because the loader expands embedded methods via go/types.
+	if len(iface.Embeds) > 0 && len(iface.Methods) <= 5 {
 		r.Score += 15
 		r.Details = append(r.Details, fmt.Sprintf("composes %d embedded interface(s)", len(iface.Embeds)))
 	}
