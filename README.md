@@ -229,6 +229,13 @@ Total, the text output lists interfaces in a **separate section** from structs,
 and the JSON output tags each target with `is_interface` so consumers can
 filter on it.
 
+For the same reason, the JSON `summary` reports structs and interfaces
+separately: `total_structs` / `average_score` cover **structs only**, while
+`total_interfaces` / `interface_average_score` cover interfaces. (Earlier
+versions counted all targets together under `total_structs` / `average_score`;
+if you compare against an old baseline, expect these two fields to differ on a
+codebase that contains interface definitions.)
+
 </details>
 
 ## Stable Target IDs (for score diffing)

@@ -2,7 +2,6 @@ package formatter
 
 import (
 	"encoding/json"
-	"math"
 
 	"github.com/harakeishi/go-solid-score/analyzer"
 	"github.com/harakeishi/go-solid-score/scorer"
@@ -143,13 +142,4 @@ func (f *JSONFormatter) Format(results []*scorer.ScoreResult) (string, error) {
 		return "", err
 	}
 	return string(data) + "\n", nil
-}
-
-// roundAvg returns the mean of sum over count, rounded to one decimal place, or
-// 0 when count is zero.
-func roundAvg(sum float64, count int) float64 {
-	if count == 0 {
-		return 0
-	}
-	return math.Round(sum/float64(count)*10) / 10
 }

@@ -113,8 +113,18 @@ JSONFormatter: emit is_interface per result (flat array)
 
 ## Backward Compatibility
 
-- JSON: additive field only; existing fields unchanged. The flat array shape
-  is preserved.
+- JSON: at the time of this design, the change was additive only (`is_interface`
+  added; the flat `results` array preserved).
+  **Update (follow-up commit):** a later fix to the JSON `summary` block changed
+  the semantics of two existing fields. `total_structs` and `average_score` now
+  count and average **structs only** (previously: all targets, structs and
+  interfaces blended). New fields `total_interfaces` and
+  `interface_average_score` were added. The `results` array is still unchanged,
+  so `differ`/`eval` baselines are unaffected (they do not read `summary`), but
+  a consumer that reads `summary.average_score` on a codebase containing
+  interfaces will see a different value than before. This was a deliberate
+  correctness fix — blending struct (five-principle) and interface (ISP-only)
+  Totals is meaningless — not a pure-additive change.
 - Text: human-facing format changes (two sections). Acceptable — it is a
   display surface, not a contract. Any golden-file tests are updated to match.
 - Diff command (`differ`): operates on `TargetID`, which is unchanged, so

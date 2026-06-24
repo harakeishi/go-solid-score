@@ -2,7 +2,6 @@ package formatter
 
 import (
 	"fmt"
-	"math"
 	"sort"
 	"strings"
 
@@ -19,7 +18,7 @@ var principles = []analyzer.Principle{
 
 func (f *TextFormatter) Format(results []*scorer.ScoreResult) (string, error) {
 	if len(results) == 0 {
-		return "No structs found to analyze.\n", nil
+		return "No targets found to analyze.\n", nil
 	}
 
 	// Structs are scored across all five principles; interfaces are scored on
@@ -79,7 +78,7 @@ func writeStructSection(b *strings.Builder, results []*scorer.ScoreResult) {
 	}
 
 	b.WriteString(strings.Repeat("-", 100) + "\n")
-	avg := math.Round(totalSum/float64(len(results))*10) / 10
+	avg := roundAvg(totalSum, len(results))
 	fmt.Fprintf(b, "%-40s %6s %6s %6s %6s %6s %7.1f\n",
 		"Average", "", "", "", "", "", avg)
 	b.WriteString(strings.Repeat("=", 100) + "\n")
@@ -106,7 +105,7 @@ func writeInterfaceSection(b *strings.Builder, results []*scorer.ScoreResult) {
 	}
 
 	b.WriteString(strings.Repeat("-", 100) + "\n")
-	avg := math.Round(totalSum/float64(len(results))*10) / 10
+	avg := roundAvg(totalSum, len(results))
 	fmt.Fprintf(b, "%-40s %6s %7.1f\n", "Average", "", avg)
 	b.WriteString(strings.Repeat("=", 100) + "\n")
 }

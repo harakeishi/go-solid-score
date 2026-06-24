@@ -66,7 +66,7 @@ func TestTextFormatter_Empty(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "No structs found") {
+	if !strings.Contains(out, "No targets found") {
 		t.Error("expected empty message")
 	}
 }

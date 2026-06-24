@@ -200,12 +200,20 @@ func (a *DIPAnalyzer) analyzeStruct(s *model.StructInfo, pkg *model.PackageInfo)
 // dependencies such as `db *sql.DB` or `workers []*Worker`. A container *of
 // interfaces* (e.g. `handlers []Handler`) is kept as an abstraction dependency.
 func (a *DIPAnalyzer) skipDep(typeName string, isIface, isFunc, isValue bool, structName string) bool {
-	// A whitelisted *interface* (io.Reader, error, http.Handler, …) is still an
-	// abstraction dependency and must count toward the DIP ratio, not be erased.
-	// Only whitelisted non-interface (concrete value) types are skipped. Erasing
-	// a whitelisted interface here let a co-occurring concrete dependency drag
-	// the ratio to 0 — the opposite of DIP's intent — so gate on !isIface.
-	if !isIface && isWhitelisted(typeName, a.userWhitelist) {
+	// Invariant: an interface dependency is always an abstraction and is never
+	// skipped — counting it is the whole point of DIP. Establishing this once up
+	// front means every rule below (whitelist, value-type, self-reference) is
+	// understood to apply to non-interface types only, so none of them needs to
+	// re-check !isIface. Erasing a whitelisted interface (io.Reader, error, …)
+	// previously let a co-occurring concrete dependency drag the ratio to 0.
+	//
+	// A struct and an interface cannot share a name in one package, so an
+	// interface field is never a self-reference; returning here changes no
+	// existing behavior, it only consolidates the rule.
+	if isIface {
+		return false
+	}
+	if isWhitelisted(typeName, a.userWhitelist) {
 		return true
 	}
 	// isFunc carries the precise (type-checked) answer; the string-prefix check
@@ -214,7 +222,7 @@ func (a *DIPAnalyzer) skipDep(typeName string, isIface, isFunc, isValue bool, st
 	if isFunc || strings.HasPrefix(coreTypeName(typeName), "func(") {
 		return true
 	}
-	if isValue && !isIface {
+	if isValue {
 		return true
 	}
 	return isSelfReference(typeName, structName)
