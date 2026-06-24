@@ -60,12 +60,16 @@ func runAll(pass *analysis.Pass) (interface{}, error) {
 	cfg := config.Default()
 	pi := PackageInfoFromPass(pass)
 
+	engine, err := cfg.Engine()
+	if err != nil {
+		return nil, err
+	}
 	analyzers := []analyzer.Analyzer{
-		analyzer.NewSRPAnalyzer(),
-		analyzer.NewOCPAnalyzer(),
-		analyzer.NewLSPAnalyzer(),
-		analyzer.NewISPAnalyzer(),
-		analyzer.NewDIPAnalyzer(nil),
+		analyzer.NewRuleAnalyzer(analyzer.SRP, engine, nil),
+		analyzer.NewRuleAnalyzer(analyzer.OCP, engine, nil),
+		analyzer.NewRuleAnalyzer(analyzer.LSP, engine, nil),
+		analyzer.NewRuleAnalyzer(analyzer.ISP, engine, nil),
+		analyzer.NewRuleAnalyzer(analyzer.DIP, engine, cfg.DIP.Whitelist),
 	}
 
 	s := scorer.New(analyzers, cfg.Weights)

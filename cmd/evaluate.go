@@ -160,7 +160,11 @@ func buildEvaluation(cfg *config.Config, patterns []string, f *evaluateFlags, sp
 		return eval.Report{}, err
 	}
 
-	scored := eval.CollectScores(scorePackages(cfg, pkgs))
+	results, err := scorePackages(cfg, pkgs)
+	if err != nil {
+		return eval.Report{}, err
+	}
+	scored := eval.CollectScores(results)
 
 	labels, err := eval.CollectDocLabels(pkgs)
 	if err != nil {
