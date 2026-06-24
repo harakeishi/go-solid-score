@@ -82,13 +82,28 @@ func extractPackageInfo(pkg *packages.Package) *model.PackageInfo {
 	structMap := make(map[string]*model.StructInfo)
 	ifaceMap := make(map[string]*model.InterfaceInfo)
 
+	// pkg.Syntax may include files the user never wrote: for cgo packages it
+	// contains cgo-generated AST (in the build cache) whose synthetic _Ctype_*
+	// structs would otherwise be scored as phantom targets. pkg.GoFiles lists
+	// only the real source files, so restrict extraction to those.
+	userFiles := make(map[string]bool, len(pkg.GoFiles))
+	for _, f := range pkg.GoFiles {
+		userFiles[f] = true
+	}
+
 	for _, file := range pkg.Syntax {
 		fpath := pkg.Fset.Position(file.Pos()).Filename
+		if !userFiles[fpath] {
+			continue
+		}
 		astutil.ExtractDecls(file, fpath, pkg.Fset, pkg.TypesInfo, structMap, ifaceMap, pi)
 	}
 
 	for _, file := range pkg.Syntax {
 		fpath := pkg.Fset.Position(file.Pos()).Filename
+		if !userFiles[fpath] {
+			continue
+		}
 		astutil.ExtractMethods(file, fpath, pkg.Fset, pkg.TypesInfo, structMap)
 	}
 
