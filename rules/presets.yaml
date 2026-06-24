@@ -73,13 +73,15 @@ rules:
     message: "low cohesion (LCOM4): -%v penalty"
 
   # A heavily attenuated cohesion penalty marks a large structured aggregate
-  # (avg group >= ~7.7 methods) rather than a fragmented type, so its SRP signal
-  # is weaker and confidence is reduced.
+  # rather than a fragmented type, so its SRP signal is weaker and confidence is
+  # reduced. The threshold is the average component size at which the original
+  # attenuation reaches 0.5: avg >= 3 + 0.5*7/0.75 = 7.66666..., so an exact
+  # boundary case such as 23 methods over LCOM4=3 is included.
   - id: srp-cohesion-confidence
     principle: SRP
     metric: srp_avg_component_size
     where: ["lcom4 >= 2"]
-    when: ">= 7.667"
+    when: ">= 7.66666"
     effect: none
     confidence: 0.7
 

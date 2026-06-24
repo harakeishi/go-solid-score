@@ -11,6 +11,8 @@
 // recompiling.
 package rules
 
+import "strings"
+
 // Effect kinds a rule (or band) can have on a target's running score.
 const (
 	EffectPenalty = "penalty" // subtract the value from the score (the default)
@@ -85,6 +87,39 @@ type Rule struct {
 // IsEnabled reports whether the rule is active (nil Enabled means enabled).
 func (r Rule) IsEnabled() bool { return r.Enabled == nil || *r.Enabled }
 
+// isNoop reports whether the rule can never change a target's score, confidence,
+// or control flow — i.e. it does literally nothing. This is almost always a
+// configuration mistake: the classic case is overriding a preset by id while
+// supplying only the field you meant to tweak (e.g. just `cap`), which replaces
+// the whole rule and drops its metric/effect, silently turning it into a no-op.
+// The engine rejects such rules at construction so the mistake is surfaced
+// rather than quietly dropping the preset's behavior.
+func (r Rule) isNoop() bool {
+	switch {
+	case r.Effect == EffectSet: // set always assigns the score, even to 0
+		return false
+	case r.FromMetric: // derives a (possibly non-zero) amount from the metric
+		return false
+	case r.Value != 0: // a literal penalty/bonus
+		return false
+	case len(r.Bands) > 0: // bands apply their own effects
+		return false
+	case r.Confidence != nil: // adjusts confidence
+		return false
+	case r.Stop: // controls evaluation flow
+		return false
+	}
+	return true
+}
+
+// usesMetric reports whether the rule actually reads its Metric value (through a
+// condition, banded thresholds, or a from-metric effect). A rule that does not
+// use its metric may legitimately leave Metric empty (e.g. an unconditional
+// confidence-only rule).
+func (r Rule) usesMetric() bool {
+	return strings.TrimSpace(r.When) != "" || len(r.Bands) > 0 || r.FromMetric
+}
+
 // AppliesTo reports whether the rule targets the given kind of definition.
 func (r Rule) AppliesTo(isInterface bool) bool {
 	switch r.Target {
@@ -128,8 +163,19 @@ func Merge(base RuleSet, user RuleSet, disable []string) RuleSet {
 	for k, v := range base.Defaults {
 		out.Defaults[k] = v
 	}
+	// Overlay user defaults field by field so a partial override (e.g. setting
+	// only base_score) keeps the base value for the unspecified field rather
+	// than zeroing it. A zero value means "not set" here, since neither a
+	// starting score of 0 nor a confidence of 0 is a meaningful configuration.
 	for k, v := range user.Defaults {
-		out.Defaults[k] = v
+		d := out.Defaults[k]
+		if v.BaseScore != 0 {
+			d.BaseScore = v.BaseScore
+		}
+		if v.BaseConfidence != 0 {
+			d.BaseConfidence = v.BaseConfidence
+		}
+		out.Defaults[k] = d
 	}
 	copy(out.Rules, base.Rules)
 

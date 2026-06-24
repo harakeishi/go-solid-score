@@ -47,15 +47,45 @@ const (
 	defaultBaseConfidence = 0.7
 )
 
-// NewEngine compiles a rule set into an Engine, validating every condition. It
-// returns an error if any rule references a malformed condition string.
-func NewEngine(rs RuleSet) (*Engine, error) {
+// NewEngine compiles a rule set into an Engine, validating it up front. Every
+// condition string must parse, and every enabled rule must actually do
+// something (no silent no-ops). If knownMetrics is non-empty, each enabled
+// rule's metric references are checked against it, so a typo'd or dropped
+// metric name is reported rather than silently read as 0. A failure returns an
+// error that names the offending rule.
+func NewEngine(rs RuleSet, knownMetrics ...string) (*Engine, error) {
+	var known map[string]bool
+	if len(knownMetrics) > 0 {
+		known = make(map[string]bool, len(knownMetrics))
+		for _, name := range knownMetrics {
+			known[name] = true
+		}
+	}
+
 	e := &Engine{
 		defaults:    rs.Defaults,
 		byprinciple: make(map[string][]compiledRule),
 		ifaceRules:  make(map[string]bool),
 	}
 	for _, r := range rs.Rules {
+		// Disabled rules never run, so they are not validated — this lets a user
+		// park an intentionally-empty placeholder behind `enabled: false`.
+		if r.IsEnabled() {
+			if r.isNoop() {
+				return nil, fmt.Errorf("rule %q has no effect: it neither changes the score nor sets confidence nor stops; if you meant to override a preset, copy all of its fields, or disable it via disable_rules", r.ID)
+			}
+			if known != nil {
+				if r.usesMetric() && !known[r.Metric] {
+					return nil, fmt.Errorf("rule %q references unknown metric %q", r.ID, r.Metric)
+				}
+				for _, w := range r.Where {
+					if name := whereMetric(w); name != "" && !known[name] {
+						return nil, fmt.Errorf("rule %q where clause references unknown metric %q", r.ID, name)
+					}
+				}
+			}
+		}
+
 		cr := compiledRule{rule: r}
 		if strings.TrimSpace(r.When) != "" {
 			c, err := parseComparison(r.When)
@@ -86,6 +116,16 @@ func NewEngine(rs RuleSet) (*Engine, error) {
 	return e, nil
 }
 
+// whereMetric extracts just the metric name from a where clause for validation,
+// without failing on a malformed clause (the full parse below reports that).
+func whereMetric(clause string) string {
+	fields := strings.Fields(clause)
+	if len(fields) == 0 {
+		return ""
+	}
+	return fields[0]
+}
+
 // HasInterfaceRules reports whether the principle has any enabled rule that
 // targets interface definitions. Analyzers use this to decide whether to score
 // interface targets at all.
@@ -97,9 +137,16 @@ func (e *Engine) HasInterfaceRules(principle string) bool {
 // returns its score, confidence, and detail lines. isInterface selects which
 // rules apply (struct vs interface targets).
 func (e *Engine) Evaluate(principle string, isInterface bool, m Metrics) Outcome {
-	d, ok := e.defaults[principle]
-	if !ok {
-		d = Defaults{BaseScore: defaultBaseScore, BaseConfidence: defaultBaseConfidence}
+	d := e.defaults[principle]
+	// Treat an unset (zero) starting value as the built-in default. A base score
+	// or confidence of 0 is never a meaningful configuration, so this guards
+	// against a principle whose defaults entry is missing or only partially
+	// specified silently scoring everything at 0.
+	if d.BaseScore == 0 {
+		d.BaseScore = defaultBaseScore
+	}
+	if d.BaseConfidence == 0 {
+		d.BaseConfidence = defaultBaseConfidence
 	}
 	out := Outcome{Score: d.BaseScore, Confidence: d.BaseConfidence}
 

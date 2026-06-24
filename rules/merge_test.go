@@ -47,3 +47,19 @@ func TestMerge_DefaultsOverride(t *testing.T) {
 		t.Errorf("base score = %v, want 90", out.Defaults["SRP"].BaseScore)
 	}
 }
+
+// TestMerge_DefaultsPartialOverride is the regression guard for the bug where
+// setting only base_score zeroed base_confidence (silently dropping a
+// principle's confidence to 0). A partial override must keep the base value for
+// the field the user did not specify.
+func TestMerge_DefaultsPartialOverride(t *testing.T) {
+	base := RuleSet{Defaults: map[string]Defaults{"SRP": {BaseScore: 100, BaseConfidence: 1.0}}}
+	user := RuleSet{Defaults: map[string]Defaults{"SRP": {BaseScore: 90}}} // confidence omitted
+	out := Merge(base, user, nil)
+	if got := out.Defaults["SRP"].BaseScore; got != 90 {
+		t.Errorf("base score = %v, want 90", got)
+	}
+	if got := out.Defaults["SRP"].BaseConfidence; got != 1.0 {
+		t.Errorf("base confidence = %v, want 1.0 preserved (not zeroed)", got)
+	}
+}

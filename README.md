@@ -106,6 +106,10 @@ disable_rules:
   - ocp-type-switch
 
 # Override a preset (same id) or add a new rule (new id).
+# NOTE: overriding by id replaces the ENTIRE rule — copy all of the preset's
+# fields and change what you need. A rule that ends up doing nothing (e.g. only
+# `id` + `cap`) is rejected with an error rather than silently dropping the
+# preset, and a misspelled `metric` is rejected too.
 rules:
   # Soften the SRP cohesion penalty to half strength.
   - id: srp-cohesion          # matches a preset id -> replaces it in place
@@ -124,7 +128,8 @@ rules:
     effect: penalty           # penalty | bonus | set | none
     value: 5
 
-# Optionally change the starting score/confidence for a principle.
+# Optionally change the starting score/confidence for a principle. Either field
+# may be set on its own; the unspecified one keeps its preset value.
 rule_defaults:
   SRP: { base_score: 100, base_confidence: 1.0 }
 ```
@@ -133,7 +138,7 @@ rule_defaults:
 
 | Field | Meaning |
 |-------|---------|
-| `id` | Unique id. A user rule with a **matching id replaces** the preset in place; a **new id is appended**. |
+| `id` | Unique id. A user rule with a **matching id replaces the whole preset** in place (copy all its fields); a **new id is appended**. |
 | `principle` | `SRP` / `OCP` / `LSP` / `ISP` / `DIP`. |
 | `target` | `struct` (default), `interface`, or `both`. |
 | `metric` | The metric the rule reads (see below). |

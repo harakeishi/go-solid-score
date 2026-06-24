@@ -240,3 +240,32 @@ func boolMetric(b bool) float64 {
 	}
 	return 0
 }
+
+// metricNames is the complete vocabulary a rule may reference: the union of
+// every key StructMetrics and InterfaceMetrics can produce. It is the source of
+// truth used to reject typo'd metric names in user rules. A test verifies it
+// covers every key the metric functions actually emit, so adding a metric
+// without listing it here fails CI.
+var metricNames = []string{
+	// struct metrics
+	"method_count", "public_method_count", "field_count", "has_fields",
+	"lcom4", "srp_cohesion_penalty", "srp_avg_component_size", "total_complexity",
+	"type_switch_count", "type_assert_count", "reflect_count", "total_stmts",
+	"type_check_density", "iface_param_count",
+	"implements_interface", "unconditional_panic_count", "noop_count",
+	"embed_missing_override_count",
+	"is_decorator", "public_lcom4", "isp_large_iface_penalty", "isp_composition_bonus",
+	"weighted_dep_total", "weighted_dep_iface", "structural_dep_total",
+	"iface_dep_ratio", "has_constructor_injection",
+	// interface metrics
+	"total_methods", "direct_methods", "embed_count",
+}
+
+// MetricNames returns the names of every metric a rule may reference. Passing
+// it to rule-engine construction lets the engine reject rules that reference an
+// unknown (typically misspelled) metric.
+func MetricNames() []string {
+	out := make([]string, len(metricNames))
+	copy(out, metricNames)
+	return out
+}

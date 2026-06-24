@@ -7,6 +7,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/harakeishi/go-solid-score/analyzer"
 	"github.com/harakeishi/go-solid-score/rules"
 )
 
@@ -37,10 +38,12 @@ func (c *Config) RuleSet() rules.RuleSet {
 	return rules.Merge(rules.DefaultRuleSet(), user, c.DisableRules)
 }
 
-// Engine builds the scoring engine from the effective rule set, returning an
-// error if any user rule contains a malformed condition.
+// Engine builds the scoring engine from the effective rule set. It validates
+// the merged rules — surfacing malformed conditions, no-op rules, and
+// references to unknown (e.g. misspelled) metrics — so configuration mistakes
+// are reported rather than silently mis-scoring.
 func (c *Config) Engine() (*rules.Engine, error) {
-	return rules.NewEngine(c.RuleSet())
+	return rules.NewEngine(c.RuleSet(), analyzer.MetricNames()...)
 }
 
 // DIPConfig holds DIP-specific configuration.

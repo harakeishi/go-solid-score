@@ -114,8 +114,77 @@ func TestEvaluate_DisabledRuleSkipped(t *testing.T) {
 }
 
 func TestNewEngine_BadConditionErrors(t *testing.T) {
-	_, err := NewEngine(RuleSet{Rules: []Rule{{ID: "x", Principle: "SRP", When: "~~"}}})
+	_, err := NewEngine(RuleSet{Rules: []Rule{{
+		ID: "x", Principle: "SRP", Metric: "method_count", When: "~~", Value: 5,
+	}}})
 	if err == nil {
 		t.Error("expected error for malformed condition")
+	}
+}
+
+// TestNewEngine_RejectsNoop guards the override footgun: a rule that does
+// nothing (the classic "I only re-specified `cap`" mistake) must be rejected so
+// it cannot silently replace a preset with a no-op.
+func TestNewEngine_RejectsNoop(t *testing.T) {
+	capLimit := 30.0
+	_, err := NewEngine(RuleSet{Rules: []Rule{{
+		ID: "ocp-type-switch", Principle: "OCP", Metric: "type_switch_count",
+		When: "> 0", Cap: &capLimit, // no effect/value/from_metric -> no-op
+	}}})
+	if err == nil {
+		t.Error("expected error for a no-op override rule")
+	}
+
+	// A disabled no-op is fine — it never runs.
+	off := false
+	if _, err := NewEngine(RuleSet{Rules: []Rule{{
+		ID: "placeholder", Principle: "OCP", Enabled: &off,
+	}}}); err != nil {
+		t.Errorf("disabled no-op should be allowed: %v", err)
+	}
+}
+
+// TestNewEngine_RejectsUnknownMetric ensures a misspelled metric is reported
+// when the known-metric vocabulary is supplied.
+func TestNewEngine_RejectsUnknownMetric(t *testing.T) {
+	_, err := NewEngine(RuleSet{Rules: []Rule{{
+		ID: "typo", Principle: "SRP", Metric: "methodd_count",
+		When: "> 5", Value: 10,
+	}}}, "method_count")
+	if err == nil {
+		t.Error("expected error for unknown metric name")
+	}
+
+	// A where clause referencing an unknown metric is also caught.
+	_, err = NewEngine(RuleSet{Rules: []Rule{{
+		ID: "typo-where", Principle: "SRP", Metric: "method_count",
+		Where: []string{"has_fieldz == 0"}, When: "> 5", Value: 10,
+	}}}, "method_count", "has_fields")
+	if err == nil {
+		t.Error("expected error for unknown where-clause metric name")
+	}
+}
+
+// TestDefaultEngine_CohesionConfidenceBoundary pins the only behavior that the
+// declarative rewrite could subtly shift: the average-component-size threshold
+// at which SRP confidence is reduced. The exact boundary (23 methods over
+// LCOM4=3 -> avg 7.6666...) must reduce confidence, matching the original
+// atten<=0.5 condition.
+func TestDefaultEngine_CohesionConfidenceBoundary(t *testing.T) {
+	e := DefaultEngine()
+	boundary := Metrics{
+		"method_count": 23, "has_fields": 1, "lcom4": 3,
+		"srp_avg_component_size": 23.0 / 3.0, "srp_cohesion_penalty": 10,
+	}
+	if got := e.Evaluate("SRP", false, boundary).Confidence; got != 0.7 {
+		t.Errorf("boundary avg 23/3: confidence = %v, want 0.7 (reduced)", got)
+	}
+
+	below := Metrics{
+		"method_count": 38, "has_fields": 1, "lcom4": 5,
+		"srp_avg_component_size": 38.0 / 5.0, "srp_cohesion_penalty": 10, // avg 7.6
+	}
+	if got := e.Evaluate("SRP", false, below).Confidence; got != 1.0 {
+		t.Errorf("avg 7.6 (below boundary): confidence = %v, want 1.0 (unreduced)", got)
 	}
 }
