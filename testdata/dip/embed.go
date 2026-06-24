@@ -24,3 +24,38 @@ type IfaceEmbedder struct {
 }
 
 func (i *IfaceEmbedder) Run() {}
+
+// Mixed owns BOTH a methodful concrete collaborator (*Engine, which has Start())
+// AND a methodless data struct (*stage, a DTO). Because at least one dependency
+// is an unambiguous behavioral collaborator, the methodless-data-struct
+// confidence cap must NOT fire: the coupling is real, not ambiguous. This guards
+// the `structuralData == structuralConcrete` boundary (a `>= 1` mutation would
+// wrongly lower confidence here). The constructor injects the data struct,
+// covering the constructor-param IsData path as well.
+// solid:want DIP=violation reason="owns a concrete collaborator (*Engine) and a data struct (*stage); a genuine concrete dependency, and not an all-data-struct case"
+type Mixed struct {
+	engine *Engine
+	st     *stage
+}
+
+func NewMixed(st *stage) *Mixed {
+	return &Mixed{engine: &Engine{}, st: st}
+}
+
+func (m *Mixed) Work() {}
+
+// CtorData has no concrete struct fields; its only structural concrete
+// dependency is a methodless data struct (*stage) injected through the
+// constructor. This exercises the constructor-param IsData path: if the
+// constructor's `structuralData++` were dropped, the cap would stop firing and
+// confidence would (wrongly) stay high. With it, every structural concrete dep
+// is a data struct, so the cap fires and confidence is lowered.
+// solid:want DIP=violation reason="owns a data struct (*stage) via constructor injection; concrete dependency, ambiguous (low confidence)"
+type CtorData struct {
+	count int // value field, not a concrete dependency
+}
+
+func NewCtorData(st *stage) *CtorData {
+	_ = st
+	return &CtorData{}
+}

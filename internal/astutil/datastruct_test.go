@@ -49,12 +49,16 @@ func (s *Service) Call() error { return nil } // pointer-receiver method -> coll
 type ValueMethoded struct{ y int }
 func (v ValueMethoded) Get() int { return v.y } // value-receiver method -> collaborator
 
+type NamedSlice []Option            // named collection wrapper...
+func (NamedSlice) Len() int { return 0 } // ...that carries behavior -> collaborator
+
 type Holder struct {
 	opt      Option          // -> data struct
 	opts     []Option        // slice of data struct -> data struct
 	optPtr   *Option         // pointer to data struct -> data struct
 	svc      *Service        // pointer-receiver collaborator -> NOT data
 	vm       ValueMethoded   // value-receiver collaborator -> NOT data
+	ns       NamedSlice      // named collection WITH a method -> NOT data
 	name     string          // builtin -> NOT a named struct, NOT data
 	tags     map[string]int  // builtin element -> NOT data
 }
@@ -68,6 +72,7 @@ type Holder struct {
 		{"optPtr", true},
 		{"svc", false},
 		{"vm", false},
+		{"ns", false},
 		{"name", false},
 		{"tags", false},
 	}

@@ -225,6 +225,62 @@ func TestDIPAnalyzer_MethodfulConcreteKeepsConfidence(t *testing.T) {
 	t.Error("ConcreteEmbedder not found in results")
 }
 
+// TestDIPAnalyzer_MixedConcreteAndDataKeepsConfidence guards the boundary of the
+// methodless-data-struct cap: it must fire ONLY when EVERY structural concrete
+// dependency is a data struct. Mixed owns one methodful collaborator (*Engine)
+// AND one data struct (*stage); the presence of the real collaborator makes the
+// coupling unambiguous, so confidence must NOT be lowered. (A `structuralData >=
+// 1` mutation of the cap condition would wrongly lower it here.)
+func TestDIPAnalyzer_MixedConcreteAndDataKeepsConfidence(t *testing.T) {
+	pkgs, err := parser.Parse([]string{"../testdata/dip"})
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+
+	a := analyzer.NewDIPAnalyzer(nil)
+	results := a.Analyze(pkgs[0])
+
+	for _, r := range results {
+		if r.TargetName == "Mixed" {
+			if r.Confidence <= analyzer.ConfidenceLowMedium {
+				t.Errorf("Mixed DIP confidence %.2f should stay high: it owns a methodful "+
+					"collaborator (*Engine) alongside the data struct, so the coupling is "+
+					"unambiguous and the cap must not fire", r.Confidence)
+			}
+			return
+		}
+	}
+	t.Error("Mixed not found in results")
+}
+
+// TestDIPAnalyzer_ConstructorDataStructLowersConfidence covers the
+// constructor-parameter IsData path: CtorData has no concrete struct field; its
+// only structural concrete dependency is a data struct (*stage) injected through
+// the constructor. The cap must still fire (every structural concrete dep is a
+// data struct), so confidence is lowered. (Dropping the constructor's
+// `structuralData++` would leave confidence high and fail this test.)
+func TestDIPAnalyzer_ConstructorDataStructLowersConfidence(t *testing.T) {
+	pkgs, err := parser.Parse([]string{"../testdata/dip"})
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+
+	a := analyzer.NewDIPAnalyzer(nil)
+	results := a.Analyze(pkgs[0])
+
+	for _, r := range results {
+		if r.TargetName == "CtorData" {
+			if r.Confidence > analyzer.ConfidenceLowMedium {
+				t.Errorf("CtorData DIP confidence %.2f should be <= ConfidenceLowMedium (%.2f): "+
+					"its only concrete dep is a data struct injected via the constructor",
+					r.Confidence, analyzer.ConfidenceLowMedium)
+			}
+			return
+		}
+	}
+	t.Error("CtorData not found in results")
+}
+
 // TestDIPAnalyzer_NoOwnedDependencies verifies that a type whose only
 // non-value dependency arrives as a concrete method parameter (call-time data,
 // not an owned collaborator) is scored neutrally with low confidence: not

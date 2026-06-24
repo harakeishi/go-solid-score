@@ -150,10 +150,14 @@ func unwrapElem(t types.Type, match func(types.Type) bool) bool {
 // analyzer keeps the score low (it never hides the dependency) but uses this
 // signal to lower confidence.
 //
-// A struct WITH methods (e.g. *regexp.Regexp, *Engine) is a behavioral
+// A type WITH methods (e.g. *regexp.Regexp, *Engine) is a behavioral
 // collaborator and is NOT reported here, so the unambiguous concrete-coupling
-// signal is preserved. Pointer-receiver methods count: Go collaborators
-// overwhelmingly use pointer receivers, so the pointer method set is consulted.
+// signal is preserved. This holds at EVERY level of the unwrap path: a named
+// collection wrapper that carries behavior — e.g. `type NamedSlice []Data` with
+// a `Len()` method — is a collaborator even if its element `Data` is a plain
+// data struct, so it must not be reported as data. Pointer-receiver methods
+// count: Go collaborators overwhelmingly use pointer receivers, so the pointer
+// method set is consulted at each level.
 func IsMethodlessDataStruct(t types.Type) bool {
 	elem, ok := unwrapElemType(t)
 	if !ok {
@@ -166,17 +170,35 @@ func IsMethodlessDataStruct(t types.Type) bool {
 	if _, ok := named.Underlying().(*types.Struct); !ok {
 		return false
 	}
-	// Consult the pointer method set: it is a superset of the value method set,
-	// so it catches pointer-receiver methods that the value set would miss.
-	return types.NewMethodSet(types.NewPointer(named)).Len() == 0
+	// The core element is a methodless named struct. unwrapElemType has already
+	// confirmed no named type along the unwrap path carries methods, so this is a
+	// pure data holder.
+	return true
+}
+
+// hasMethods reports whether t's pointer method set is non-empty. The pointer
+// method set is a superset of the value method set, so it catches
+// pointer-receiver methods that the value set would miss.
+func hasMethods(t types.Type) bool {
+	return types.NewMethodSet(types.NewPointer(t)).Len() != 0
 }
 
 // unwrapElemType peels pointer/slice/array/map(value)/channel wrappers off t
 // (up to a bounded depth) and returns the resulting underlying-level type. It is
-// the type-returning twin of unwrapElem. ok is false only when the depth bound
-// is exceeded (pathological/cyclic type graphs).
+// the type-returning twin of unwrapElem.
+//
+// At each level it checks whether the (possibly named) wrapper type itself
+// carries methods; if so it stops and returns (nil, false), because a wrapper
+// with behavior is a collaborator, not a transparent data container. ok is also
+// false when the depth bound is exceeded (pathological/cyclic type graphs).
 func unwrapElemType(t types.Type) (types.Type, bool) {
 	for i := 0; i < 8; i++ {
+		// A named wrapper that has methods is itself a behavioral collaborator;
+		// do not transparently descend into its element. (A plain unnamed
+		// pointer/slice/map has no methods, so this is a no-op for them.)
+		if _, isNamed := t.(*types.Named); isNamed && hasMethods(t) {
+			return nil, false
+		}
 		switch c := t.Underlying().(type) {
 		case *types.Pointer:
 			t = c.Elem()
