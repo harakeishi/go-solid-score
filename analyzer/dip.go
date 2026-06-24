@@ -60,6 +60,12 @@ func (a *DIPAnalyzer) analyzeStruct(s *model.StructInfo, pkg *model.PackageInfo)
 
 	var dw depWeight
 	var concreteDeps []string
+	// structuralConcrete counts structural (field + constructor) concrete
+	// dependencies; structuralData counts how many of those are methodless data
+	// structs (DTOs/value objects). When every structural concrete dependency is
+	// a data struct, the low score is ambiguous (collaborator vs. data
+	// aggregate), so confidence is lowered — without hiding the dependency.
+	var structuralConcrete, structuralData int
 
 	// Analyze struct fields (highest weight - structural dependencies).
 	// Embedded fields (Name == "") are NOT skipped: embedding is the tightest
@@ -80,6 +86,10 @@ func (a *DIPAnalyzer) analyzeStruct(s *model.StructInfo, pkg *model.PackageInfo)
 				name = "(embedded)"
 			}
 			concreteDeps = append(concreteDeps, fmt.Sprintf("field %s: %s", name, f.TypeName))
+			structuralConcrete++
+			if f.IsData {
+				structuralData++
+			}
 		}
 	}
 
@@ -95,6 +105,10 @@ func (a *DIPAnalyzer) analyzeStruct(s *model.StructInfo, pkg *model.PackageInfo)
 				dw.iface += constructorDepWeight
 			} else {
 				concreteDeps = append(concreteDeps, fmt.Sprintf("constructor param %s: %s", p.Name, p.TypeName))
+				structuralConcrete++
+				if p.IsData {
+					structuralData++
+				}
 			}
 		}
 	}
@@ -174,6 +188,20 @@ func (a *DIPAnalyzer) analyzeStruct(s *model.StructInfo, pkg *model.PackageInfo)
 		r.Confidence = ConfidenceMediumHigh
 	} else {
 		r.Confidence = ConfidenceMedium
+	}
+
+	// When every structural concrete dependency is a methodless data struct
+	// (a DTO/value object such as []cmdOption), the low score is ambiguous: the
+	// dependency may be a genuine collaborator that simply has no methods yet, or
+	// merely a nested data aggregate that DIP need not penalize. We keep the score
+	// low (favoring no false negatives) but lower confidence to flag the
+	// ambiguity. A single methodful concrete collaborator (e.g. *Engine,
+	// *syslog.Writer) makes the coupling unambiguous, so the cap does not apply.
+	if structuralConcrete > 0 && structuralData == structuralConcrete {
+		if r.Confidence > ConfidenceLowMedium {
+			r.Confidence = ConfidenceLowMedium
+		}
+		r.Details = append(r.Details, "concrete dependencies are all methodless data structs (DTO/value object); DIP weakly applicable")
 	}
 
 	r.Score = Clamp(r.Score)

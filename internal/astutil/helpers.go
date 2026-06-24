@@ -141,6 +141,60 @@ func unwrapElem(t types.Type, match func(types.Type) bool) bool {
 	return false
 }
 
+// IsMethodlessDataStruct reports whether the core element of t — reached by
+// unwrapping pointers/slices/arrays/maps/channels — is a named struct type that
+// has no methods at all (neither value- nor pointer-receiver). Such a type is a
+// pure data holder (a DTO / value object): it carries data rather than behavior,
+// so a dependency on it is ambiguous for DIP — it may be a genuine collaborator
+// that simply has no methods *yet*, or merely a nested data aggregate. The DIP
+// analyzer keeps the score low (it never hides the dependency) but uses this
+// signal to lower confidence.
+//
+// A struct WITH methods (e.g. *regexp.Regexp, *Engine) is a behavioral
+// collaborator and is NOT reported here, so the unambiguous concrete-coupling
+// signal is preserved. Pointer-receiver methods count: Go collaborators
+// overwhelmingly use pointer receivers, so the pointer method set is consulted.
+func IsMethodlessDataStruct(t types.Type) bool {
+	elem, ok := unwrapElemType(t)
+	if !ok {
+		return false
+	}
+	named, ok := elem.(*types.Named)
+	if !ok {
+		return false
+	}
+	if _, ok := named.Underlying().(*types.Struct); !ok {
+		return false
+	}
+	// Consult the pointer method set: it is a superset of the value method set,
+	// so it catches pointer-receiver methods that the value set would miss.
+	return types.NewMethodSet(types.NewPointer(named)).Len() == 0
+}
+
+// unwrapElemType peels pointer/slice/array/map(value)/channel wrappers off t
+// (up to a bounded depth) and returns the resulting underlying-level type. It is
+// the type-returning twin of unwrapElem. ok is false only when the depth bound
+// is exceeded (pathological/cyclic type graphs).
+func unwrapElemType(t types.Type) (types.Type, bool) {
+	for i := 0; i < 8; i++ {
+		switch c := t.Underlying().(type) {
+		case *types.Pointer:
+			t = c.Elem()
+		case *types.Slice:
+			t = c.Elem()
+		case *types.Array:
+			t = c.Elem()
+		case *types.Chan:
+			t = c.Elem()
+		case *types.Map:
+			t = c.Elem()
+		default:
+			return t, true
+		}
+	}
+	return nil, false
+}
+
 // IsNoopBody checks if a function body is a no-op (empty or bare return).
 func IsNoopBody(body *ast.BlockStmt) bool {
 	if body == nil || len(body.List) == 0 {

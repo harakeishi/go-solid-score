@@ -165,6 +165,66 @@ func TestDIPAnalyzer_ConcreteCollection(t *testing.T) {
 	t.Error("Pipeline not found in results")
 }
 
+// TestDIPAnalyzer_MethodlessDataStructLowersConfidence verifies that when a
+// type's only concrete structural dependencies are methodless data structs
+// (pure data holders like a DTO/value object, e.g. []*stage), the DIP score
+// stays low (we never hide a potential coupling — favoring no false negatives)
+// but the confidence is lowered to signal the value is ambiguous: such a
+// dependency may be a genuine collaborator or merely a nested data aggregate,
+// and the two are structurally indistinguishable.
+func TestDIPAnalyzer_MethodlessDataStructLowersConfidence(t *testing.T) {
+	pkgs, err := parser.Parse([]string{"../testdata/dip"})
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+
+	a := analyzer.NewDIPAnalyzer(nil)
+	results := a.Analyze(pkgs[0])
+
+	for _, r := range results {
+		if r.TargetName == "Pipeline" {
+			// stage has no methods -> pure data. Score must remain low (the
+			// dependency is not hidden), but confidence must be lowered.
+			if r.Score >= 80 {
+				t.Errorf("Pipeline DIP score %.1f should remain low (concrete dep not hidden)", r.Score)
+			}
+			if r.Confidence > analyzer.ConfidenceLowMedium {
+				t.Errorf("Pipeline DIP confidence %.2f should be <= ConfidenceLowMedium (%.2f): "+
+					"a methodless data struct dependency is ambiguous (collaborator vs. data aggregate)",
+					r.Confidence, analyzer.ConfidenceLowMedium)
+			}
+			return
+		}
+	}
+	t.Error("Pipeline not found in results")
+}
+
+// TestDIPAnalyzer_MethodfulConcreteKeepsConfidence guards the other side: a
+// dependency on a concrete type that HAS methods (a real behavioral
+// collaborator, e.g. embedding *Engine) is an unambiguous DIP violation, so its
+// confidence must NOT be lowered by the methodless-data-struct rule.
+func TestDIPAnalyzer_MethodfulConcreteKeepsConfidence(t *testing.T) {
+	pkgs, err := parser.Parse([]string{"../testdata/dip"})
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+
+	a := analyzer.NewDIPAnalyzer(nil)
+	results := a.Analyze(pkgs[0])
+
+	for _, r := range results {
+		if r.TargetName == "ConcreteEmbedder" {
+			if r.Confidence <= analyzer.ConfidenceLowMedium {
+				t.Errorf("ConcreteEmbedder DIP confidence %.2f should stay high: "+
+					"*Engine has methods, so it is an unambiguous concrete collaborator",
+					r.Confidence)
+			}
+			return
+		}
+	}
+	t.Error("ConcreteEmbedder not found in results")
+}
+
 // TestDIPAnalyzer_NoOwnedDependencies verifies that a type whose only
 // non-value dependency arrives as a concrete method parameter (call-time data,
 // not an owned collaborator) is scored neutrally with low confidence: not
