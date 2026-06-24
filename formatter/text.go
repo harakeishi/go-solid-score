@@ -22,47 +22,99 @@ func (f *TextFormatter) Format(results []*scorer.ScoreResult) (string, error) {
 		return "No structs found to analyze.\n", nil
 	}
 
+	// Structs are scored across all five principles; interfaces are scored on
+	// ISP alone, so their Total is not comparable to a struct's. Present them
+	// in separate sections so each Total is only ranked against like-for-like.
+	var structs, interfaces []*scorer.ScoreResult
+	for _, r := range results {
+		if r.IsInterface {
+			interfaces = append(interfaces, r)
+		} else {
+			structs = append(structs, r)
+		}
+	}
+
+	var b strings.Builder
+	b.WriteString("go-solid-score\n")
+
+	if len(structs) > 0 {
+		writeStructSection(&b, structs)
+	}
+	if len(interfaces) > 0 {
+		if len(structs) > 0 {
+			b.WriteString("\n")
+		}
+		writeInterfaceSection(&b, interfaces)
+	}
+
+	return b.String(), nil
+}
+
+// writeStructSection renders the full five-principle table for struct targets.
+func writeStructSection(b *strings.Builder, results []*scorer.ScoreResult) {
 	sort.Slice(results, func(i, j int) bool {
 		return results[i].Total < results[j].Total
 	})
 
-	var b strings.Builder
-
-	b.WriteString("go-solid-score\n")
 	b.WriteString(strings.Repeat("=", 100) + "\n")
-
-	// Header
-	fmt.Fprintf(&b, "%-40s %6s %6s %6s %6s %6s %7s\n",
+	fmt.Fprintf(b, "%-40s %6s %6s %6s %6s %6s %7s\n",
 		"Struct", "SRP", "OCP", "LSP", "ISP", "DIP", "Total")
 	b.WriteString(strings.Repeat("-", 100) + "\n")
 
 	var totalSum float64
 	for _, r := range results {
-		name := r.TargetName
-		if len(name) > 40 {
-			name = name[:37] + "..."
-		}
-		fmt.Fprintf(&b, "%-40s", name)
+		fmt.Fprintf(b, "%-40s", truncateName(r.TargetName))
 		for _, p := range principles {
-			// A principle that was not evaluated for this target (e.g. SRP/OCP/
-			// LSP/DIP on an interface definition, which only ISP scores) has no
-			// entry in Scores. Render it as "-" (not applicable) rather than 0.0,
-			// which would be indistinguishable from a genuine zero score.
+			// A principle with no entry in Scores was not evaluated for this
+			// target. Render it as "-" (not applicable) rather than 0.0, which
+			// would be indistinguishable from a genuine zero score.
 			if v, ok := r.Scores[p]; ok {
-				fmt.Fprintf(&b, " %6.1f", v)
+				fmt.Fprintf(b, " %6.1f", v)
 			} else {
-				fmt.Fprintf(&b, " %6s", "-")
+				fmt.Fprintf(b, " %6s", "-")
 			}
 		}
-		fmt.Fprintf(&b, " %7.1f\n", r.Total)
+		fmt.Fprintf(b, " %7.1f\n", r.Total)
 		totalSum += r.Total
 	}
 
 	b.WriteString(strings.Repeat("-", 100) + "\n")
 	avg := math.Round(totalSum/float64(len(results))*10) / 10
-	fmt.Fprintf(&b, "%-40s %6s %6s %6s %6s %6s %7.1f\n",
+	fmt.Fprintf(b, "%-40s %6s %6s %6s %6s %6s %7.1f\n",
 		"Average", "", "", "", "", "", avg)
 	b.WriteString(strings.Repeat("=", 100) + "\n")
+}
 
-	return b.String(), nil
+// writeInterfaceSection renders a slim ISP-only table for interface targets.
+// Interfaces are scored on ISP alone (Total == ISP), so a five-principle table
+// would be four columns of "-"; showing only ISP and Total makes the
+// single-principle nature explicit.
+func writeInterfaceSection(b *strings.Builder, results []*scorer.ScoreResult) {
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].Total < results[j].Total
+	})
+
+	b.WriteString(strings.Repeat("=", 100) + "\n")
+	fmt.Fprintf(b, "%-40s %6s %7s\n", "Interface", "ISP", "Total")
+	b.WriteString(strings.Repeat("-", 100) + "\n")
+
+	var totalSum float64
+	for _, r := range results {
+		isp := r.Scores[analyzer.ISP]
+		fmt.Fprintf(b, "%-40s %6.1f %7.1f\n", truncateName(r.TargetName), isp, r.Total)
+		totalSum += r.Total
+	}
+
+	b.WriteString(strings.Repeat("-", 100) + "\n")
+	avg := math.Round(totalSum/float64(len(results))*10) / 10
+	fmt.Fprintf(b, "%-40s %6s %7.1f\n", "Average", "", avg)
+	b.WriteString(strings.Repeat("=", 100) + "\n")
+}
+
+// truncateName shortens a target name to fit the fixed-width name column.
+func truncateName(name string) string {
+	if len(name) > 40 {
+		return name[:37] + "..."
+	}
+	return name
 }

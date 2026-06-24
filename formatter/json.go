@@ -29,18 +29,22 @@ type JSONOutput struct {
 type JSONResult struct {
 	// ID is the stable identifier (package path + name) for diffing scores
 	// across runs; it is unaffected by file renames or moves.
-	ID         string             `json:"id"`
-	Name       string             `json:"name"`
-	Package    string             `json:"package"`
-	File       string             `json:"file"`
-	Line       int                `json:"line"`
-	SRP        *float64           `json:"srp"`
-	OCP        *float64           `json:"ocp"`
-	LSP        *float64           `json:"lsp"`
-	ISP        *float64           `json:"isp"`
-	DIP        *float64           `json:"dip"`
-	Total      float64            `json:"total"`
-	Confidence map[string]float64 `json:"confidence"`
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Package string `json:"package"`
+	File    string `json:"file"`
+	Line    int    `json:"line"`
+	// IsInterface is true when the target is an interface definition. Such
+	// targets are scored on ISP alone (other principle fields are null), so
+	// consumers can filter on this to compare like-for-like.
+	IsInterface bool               `json:"is_interface"`
+	SRP         *float64           `json:"srp"`
+	OCP         *float64           `json:"ocp"`
+	LSP         *float64           `json:"lsp"`
+	ISP         *float64           `json:"isp"`
+	DIP         *float64           `json:"dip"`
+	Total       float64            `json:"total"`
+	Confidence  map[string]float64 `json:"confidence"`
 }
 
 // Principles projects the per-principle scores into a map keyed by principle
@@ -96,18 +100,19 @@ func (f *JSONFormatter) Format(results []*scorer.ScoreResult) (string, error) {
 			return &v
 		}
 		jr := JSONResult{
-			ID:         r.TargetID(),
-			Name:       r.TargetName,
-			Package:    r.TargetPkg,
-			File:       r.TargetFile,
-			Line:       r.TargetLine,
-			SRP:        score(analyzer.SRP),
-			OCP:        score(analyzer.OCP),
-			LSP:        score(analyzer.LSP),
-			ISP:        score(analyzer.ISP),
-			DIP:        score(analyzer.DIP),
-			Total:      r.Total,
-			Confidence: conf,
+			ID:          r.TargetID(),
+			Name:        r.TargetName,
+			Package:     r.TargetPkg,
+			File:        r.TargetFile,
+			Line:        r.TargetLine,
+			IsInterface: r.IsInterface,
+			SRP:         score(analyzer.SRP),
+			OCP:         score(analyzer.OCP),
+			LSP:         score(analyzer.LSP),
+			ISP:         score(analyzer.ISP),
+			DIP:         score(analyzer.DIP),
+			Total:       r.Total,
+			Confidence:  conf,
 		}
 		out.Results = append(out.Results, jr)
 		totalSum += r.Total
