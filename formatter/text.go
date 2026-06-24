@@ -44,7 +44,15 @@ func (f *TextFormatter) Format(results []*scorer.ScoreResult) (string, error) {
 		}
 		fmt.Fprintf(&b, "%-40s", name)
 		for _, p := range principles {
-			fmt.Fprintf(&b, " %6.1f", r.Scores[p])
+			// A principle that was not evaluated for this target (e.g. SRP/OCP/
+			// LSP/DIP on an interface definition, which only ISP scores) has no
+			// entry in Scores. Render it as "-" (not applicable) rather than 0.0,
+			// which would be indistinguishable from a genuine zero score.
+			if v, ok := r.Scores[p]; ok {
+				fmt.Fprintf(&b, " %6.1f", v)
+			} else {
+				fmt.Fprintf(&b, " %6s", "-")
+			}
 		}
 		fmt.Fprintf(&b, " %7.1f\n", r.Total)
 		totalSum += r.Total

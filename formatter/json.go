@@ -83,8 +83,16 @@ func (f *JSONFormatter) Format(results []*scorer.ScoreResult) (string, error) {
 		for p, c := range r.Confidence {
 			conf[string(p)] = c
 		}
+		// Return a pointer only for principles that were actually evaluated for
+		// this target. A missing principle (e.g. SRP/OCP/LSP/DIP on an interface
+		// definition, which only ISP scores) yields nil → JSON null, which is
+		// distinguishable from a real zero score. The *float64 field type and
+		// Principles() (nil-aware) are designed for exactly this.
 		score := func(p analyzer.Principle) *float64 {
-			v := r.Scores[p]
+			v, ok := r.Scores[p]
+			if !ok {
+				return nil
+			}
 			return &v
 		}
 		jr := JSONResult{
