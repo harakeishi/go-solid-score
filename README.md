@@ -222,6 +222,13 @@ Total = Σ(principle_score × weight) / Σ(weights)
 
 Weights are configurable (see [Configuration](#configuration)). Zero-weighted principles are excluded. The result is rounded to one decimal place.
 
+Only principles that were actually evaluated for a target contribute to the
+average. Interface definitions are scored on ISP alone, so their Total equals
+their ISP score. Because that is not comparable to a struct's five-principle
+Total, the text output lists interfaces in a **separate section** from structs,
+and the JSON output tags each target with `is_interface` so consumers can
+filter on it.
+
 </details>
 
 ## Stable Target IDs (for score diffing)
@@ -236,7 +243,8 @@ addition to the human-facing `file` and `line`:
   "name": "MyStruct",
   "package": "github.com/foo/bar",
   "file": "/abs/path/to/bar/mystruct.go",
-  "line": 10
+  "line": 10,
+  "is_interface": false
 }
 ```
 
