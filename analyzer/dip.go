@@ -194,7 +194,12 @@ func (a *DIPAnalyzer) analyzeStruct(s *model.StructInfo, pkg *model.PackageInfo)
 // dependencies such as `db *sql.DB` or `workers []*Worker`. A container *of
 // interfaces* (e.g. `handlers []Handler`) is kept as an abstraction dependency.
 func (a *DIPAnalyzer) skipDep(typeName string, isIface, isFunc, isValue bool, structName string) bool {
-	if isWhitelisted(typeName, a.userWhitelist) {
+	// A whitelisted *interface* (io.Reader, error, http.Handler, …) is still an
+	// abstraction dependency and must count toward the DIP ratio, not be erased.
+	// Only whitelisted non-interface (concrete value) types are skipped. Erasing
+	// a whitelisted interface here let a co-occurring concrete dependency drag
+	// the ratio to 0 — the opposite of DIP's intent — so gate on !isIface.
+	if !isIface && isWhitelisted(typeName, a.userWhitelist) {
 		return true
 	}
 	// isFunc carries the precise (type-checked) answer; the string-prefix check

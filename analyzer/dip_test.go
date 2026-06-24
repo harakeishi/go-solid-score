@@ -50,6 +50,34 @@ func TestDIPAnalyzer_Bad(t *testing.T) {
 	t.Error("BadService not found in results")
 }
 
+// TestDIPAnalyzer_WhitelistedInterfaceCountsAsAbstraction guards against a
+// false positive where a whitelisted stdlib interface (io.Reader/io.Writer) was
+// skipped entirely instead of counting as an abstraction dependency. A type
+// that depends on two such interfaces AND one concrete type should score ~67
+// (2 abstract / 3 total), not 0 (which happens if the abstractions are erased
+// and only the concrete remains in the ratio).
+func TestDIPAnalyzer_WhitelistedInterfaceCountsAsAbstraction(t *testing.T) {
+	pkgs, err := parser.Parse([]string{"../testdata/dip"})
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+
+	a := analyzer.NewDIPAnalyzer(nil)
+	results := a.Analyze(pkgs[0])
+
+	for _, r := range results {
+		if r.TargetName == "MixedStdlibIface" {
+			// 2 abstract (io.Reader, io.Writer) + 1 concrete (*Concrete)
+			// => ratio 2/3 => ~67.
+			if r.Score < 60 || r.Score > 75 {
+				t.Errorf("MixedStdlibIface DIP score %.1f should be ~67 (whitelisted interfaces must count as abstractions), not erased to 0", r.Score)
+			}
+			return
+		}
+	}
+	t.Error("MixedStdlibIface not found in results")
+}
+
 // TestDIPAnalyzer_RecursiveAggregate verifies that value data, callbacks, and
 // self-references are not counted as concrete dependencies. Such fields are
 // the dominant false-positive source on idiomatic aggregate/config structs.
