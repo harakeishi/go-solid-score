@@ -78,6 +78,39 @@ func TestDIPAnalyzer_WhitelistedInterfaceCountsAsAbstraction(t *testing.T) {
 	t.Error("MixedStdlibIface not found in results")
 }
 
+// TestDIPAnalyzer_EmbeddedConcreteCounts guards against ignoring embedded
+// fields. Embedding a concrete type is the tightest structural coupling, yet
+// the analyzer skipped embedded fields entirely, vacuously awarding DIP=100 —
+// the exact opposite of the intended signal. A struct embedding a concrete type
+// must be flagged (score below the DIP threshold), while a struct embedding an
+// interface must still score well (abstraction dependency).
+func TestDIPAnalyzer_EmbeddedConcreteCounts(t *testing.T) {
+	pkgs, err := parser.Parse([]string{"../testdata/dip"})
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+
+	a := analyzer.NewDIPAnalyzer(nil)
+	results := a.Analyze(pkgs[0])
+
+	got := make(map[string]float64)
+	for _, r := range results {
+		got[r.TargetName] = r.Score
+	}
+
+	if s, ok := got["ConcreteEmbedder"]; !ok {
+		t.Fatal("ConcreteEmbedder not found")
+	} else if s >= 60 {
+		t.Errorf("ConcreteEmbedder embeds a concrete type; DIP %.1f should be < 60 (a concrete dependency), not awarded a high score", s)
+	}
+
+	if s, ok := got["IfaceEmbedder"]; !ok {
+		t.Fatal("IfaceEmbedder not found")
+	} else if s < 60 {
+		t.Errorf("IfaceEmbedder embeds an interface; DIP %.1f should be >= 60 (abstraction dependency)", s)
+	}
+}
+
 // TestDIPAnalyzer_RecursiveAggregate verifies that value data, callbacks, and
 // self-references are not counted as concrete dependencies. Such fields are
 // the dominant false-positive source on idiomatic aggregate/config structs.
