@@ -36,9 +36,16 @@ type Result struct {
 	TargetName string
 	TargetFile string
 	TargetLine int
-	Score      float64
-	Confidence float64
-	Details    []string
+	// TargetIsInterface marks the target as an interface definition rather than
+	// a struct. The ISP analyzer is the sole authority for this flag, since it
+	// is the only analyzer that visits interface definitions. It lets the
+	// formatters present interfaces separately from structs, because an
+	// interface is scored on ISP alone and its Total is therefore not
+	// comparable to a struct's five-principle Total.
+	TargetIsInterface bool
+	Score             float64
+	Confidence        float64
+	Details           []string
 }
 
 // Analyzer is the interface every SOLID principle analyzer implements.

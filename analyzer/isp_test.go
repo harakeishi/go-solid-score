@@ -76,6 +76,9 @@ func TestISPAnalyzer_FatInterface(t *testing.T) {
 			if r.Score >= 50 {
 				t.Errorf("FatInterface ISP score %.1f should be < 50 (flagged as a violation)", r.Score)
 			}
+			if !r.TargetIsInterface {
+				t.Error("FatInterface result should have TargetIsInterface=true")
+			}
 			return
 		}
 	}
@@ -98,10 +101,35 @@ func TestISPAnalyzer_SmallInterface(t *testing.T) {
 			if r.Score < 90 {
 				t.Errorf("Reader (1 method) ISP score %.1f should be >= 90", r.Score)
 			}
+			if !r.TargetIsInterface {
+				t.Error("Reader result should have TargetIsInterface=true")
+			}
 			return
 		}
 	}
 	t.Error("Reader interface not found in results")
+}
+
+// TestISPAnalyzer_StructNotMarkedInterface ensures struct targets are not
+// flagged as interfaces, so the formatters can separate the two kinds.
+func TestISPAnalyzer_StructNotMarkedInterface(t *testing.T) {
+	pkgs, err := parser.Parse([]string{"../testdata/isp"})
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+
+	a := analyzer.NewISPAnalyzer()
+	results := a.Analyze(pkgs[0])
+
+	for _, r := range results {
+		if r.TargetName == "FatImpl" {
+			if r.TargetIsInterface {
+				t.Error("FatImpl is a struct and must have TargetIsInterface=false")
+			}
+			return
+		}
+	}
+	t.Error("FatImpl struct not found in results")
 }
 
 // TestISPAnalyzer_ComposedInterface checks that an interface composed of small

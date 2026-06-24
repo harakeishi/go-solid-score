@@ -2,7 +2,6 @@ package formatter
 
 import (
 	"encoding/json"
-	"math"
 
 	"github.com/harakeishi/go-solid-score/analyzer"
 	"github.com/harakeishi/go-solid-score/scorer"
@@ -29,18 +28,22 @@ type JSONOutput struct {
 type JSONResult struct {
 	// ID is the stable identifier (package path + name) for diffing scores
 	// across runs; it is unaffected by file renames or moves.
-	ID         string             `json:"id"`
-	Name       string             `json:"name"`
-	Package    string             `json:"package"`
-	File       string             `json:"file"`
-	Line       int                `json:"line"`
-	SRP        *float64           `json:"srp"`
-	OCP        *float64           `json:"ocp"`
-	LSP        *float64           `json:"lsp"`
-	ISP        *float64           `json:"isp"`
-	DIP        *float64           `json:"dip"`
-	Total      float64            `json:"total"`
-	Confidence map[string]float64 `json:"confidence"`
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Package string `json:"package"`
+	File    string `json:"file"`
+	Line    int    `json:"line"`
+	// IsInterface is true when the target is an interface definition. Such
+	// targets are scored on ISP alone (other principle fields are null), so
+	// consumers can filter on this to compare like-for-like.
+	IsInterface bool               `json:"is_interface"`
+	SRP         *float64           `json:"srp"`
+	OCP         *float64           `json:"ocp"`
+	LSP         *float64           `json:"lsp"`
+	ISP         *float64           `json:"isp"`
+	DIP         *float64           `json:"dip"`
+	Total       float64            `json:"total"`
+	Confidence  map[string]float64 `json:"confidence"`
 }
 
 // Principles projects the per-principle scores into a map keyed by principle
@@ -66,10 +69,16 @@ func (r JSONResult) Principles() map[string]float64 {
 	return m
 }
 
-// JSONSummary is the aggregate block of the JSON document.
+// JSONSummary is the aggregate block of the JSON document. Structs and
+// interfaces are summarized separately: an interface is scored on ISP alone, so
+// its Total is not comparable to a struct's five-principle Total, and blending
+// the two (or counting interfaces under total_structs) is meaningless. This
+// mirrors the two-section split in the text formatter.
 type JSONSummary struct {
-	TotalStructs int     `json:"total_structs"`
-	AverageScore float64 `json:"average_score"`
+	TotalStructs          int     `json:"total_structs"`
+	AverageScore          float64 `json:"average_score"`
+	TotalInterfaces       int     `json:"total_interfaces"`
+	InterfaceAverageScore float64 `json:"interface_average_score"`
 }
 
 func (f *JSONFormatter) Format(results []*scorer.ScoreResult) (string, error) {
@@ -77,41 +86,55 @@ func (f *JSONFormatter) Format(results []*scorer.ScoreResult) (string, error) {
 		Results: make([]JSONResult, 0, len(results)),
 	}
 
-	var totalSum float64
+	var structSum, ifaceSum float64
+	var structCount, ifaceCount int
 	for _, r := range results {
 		conf := make(map[string]float64)
 		for p, c := range r.Confidence {
 			conf[string(p)] = c
 		}
+		// Return a pointer only for principles that were actually evaluated for
+		// this target. A missing principle (e.g. SRP/OCP/LSP/DIP on an interface
+		// definition, which only ISP scores) yields nil → JSON null, which is
+		// distinguishable from a real zero score. The *float64 field type and
+		// Principles() (nil-aware) are designed for exactly this.
 		score := func(p analyzer.Principle) *float64 {
-			v := r.Scores[p]
+			v, ok := r.Scores[p]
+			if !ok {
+				return nil
+			}
 			return &v
 		}
 		jr := JSONResult{
-			ID:         r.TargetID(),
-			Name:       r.TargetName,
-			Package:    r.TargetPkg,
-			File:       r.TargetFile,
-			Line:       r.TargetLine,
-			SRP:        score(analyzer.SRP),
-			OCP:        score(analyzer.OCP),
-			LSP:        score(analyzer.LSP),
-			ISP:        score(analyzer.ISP),
-			DIP:        score(analyzer.DIP),
-			Total:      r.Total,
-			Confidence: conf,
+			ID:          r.TargetID(),
+			Name:        r.TargetName,
+			Package:     r.TargetPkg,
+			File:        r.TargetFile,
+			Line:        r.TargetLine,
+			IsInterface: r.IsInterface,
+			SRP:         score(analyzer.SRP),
+			OCP:         score(analyzer.OCP),
+			LSP:         score(analyzer.LSP),
+			ISP:         score(analyzer.ISP),
+			DIP:         score(analyzer.DIP),
+			Total:       r.Total,
+			Confidence:  conf,
 		}
 		out.Results = append(out.Results, jr)
-		totalSum += r.Total
+		if r.IsInterface {
+			ifaceSum += r.Total
+			ifaceCount++
+		} else {
+			structSum += r.Total
+			structCount++
+		}
 	}
 
-	avg := 0.0
-	if len(results) > 0 {
-		avg = math.Round(totalSum/float64(len(results))*10) / 10
-	}
 	out.Summary = JSONSummary{
-		TotalStructs: len(results),
-		AverageScore: avg,
+		TotalStructs:          structCount,
+		AverageScore:          roundAvg(structSum, structCount),
+		TotalInterfaces:       ifaceCount,
+		InterfaceAverageScore: roundAvg(ifaceSum, ifaceCount),
 	}
 
 	data, err := json.MarshalIndent(out, "", "  ")

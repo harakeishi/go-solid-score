@@ -66,7 +66,7 @@ func TestTextFormatter_Empty(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "No structs found") {
+	if !strings.Contains(out, "No targets found") {
 		t.Error("expected empty message")
 	}
 }
@@ -146,5 +146,161 @@ func TestJSONFormatter_Empty(t *testing.T) {
 	}
 	if parsed.Summary.TotalStructs != 0 {
 		t.Errorf("expected 0 structs, got %d", parsed.Summary.TotalStructs)
+	}
+}
+
+// makeMixedResults returns one struct and one interface target so that
+// section-splitting behavior can be exercised.
+func makeMixedResults() []*scorer.ScoreResult {
+	return []*scorer.ScoreResult{
+		{
+			TargetPkg:  "example.com/pkg",
+			TargetName: "MyStruct",
+			TargetFile: "s.go",
+			TargetLine: 10,
+			Scores: map[analyzer.Principle]float64{
+				analyzer.SRP: 100, analyzer.OCP: 90, analyzer.LSP: 100, analyzer.ISP: 80, analyzer.DIP: 70,
+			},
+			Total: 88.0,
+		},
+		{
+			TargetPkg:   "example.com/pkg",
+			TargetName:  "MyIface",
+			TargetFile:  "i.go",
+			TargetLine:  5,
+			IsInterface: true,
+			// An interface is scored on ISP alone.
+			Scores: map[analyzer.Principle]float64{analyzer.ISP: 100},
+			Total:  100.0,
+		},
+	}
+}
+
+func TestTextFormatter_SeparatesInterfaceSection(t *testing.T) {
+	f := &formatter.TextFormatter{}
+	out, err := f.Format(makeMixedResults())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Both a Struct header and an Interface header must appear.
+	if !strings.Contains(out, "Struct") {
+		t.Error("expected a Struct section header")
+	}
+	if !strings.Contains(out, "Interface") {
+		t.Error("expected an Interface section header")
+	}
+	// The interface must be listed after the struct section, in its own table.
+	structIdx := strings.Index(out, "MyStruct")
+	ifaceIdx := strings.Index(out, "MyIface")
+	ifaceHdrIdx := strings.Index(out, "Interface")
+	if structIdx < 0 || ifaceIdx < 0 {
+		t.Fatalf("expected both targets in output:\n%s", out)
+	}
+	if ifaceIdx < ifaceHdrIdx {
+		t.Errorf("interface row should appear under the Interface header, got:\n%s", out)
+	}
+}
+
+func TestTextFormatter_StructOnlyHasNoInterfaceSection(t *testing.T) {
+	f := &formatter.TextFormatter{}
+	out, err := f.Format(makeResults()) // structs only
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out, "Interface") {
+		t.Errorf("struct-only input should not emit an Interface section:\n%s", out)
+	}
+}
+
+func TestTextFormatter_InterfaceOnlyHasNoStructSection(t *testing.T) {
+	f := &formatter.TextFormatter{}
+	only := makeMixedResults()[1:] // interface only
+	out, err := f.Format(only)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out, "SRP") {
+		t.Errorf("interface-only input should not emit the five-principle struct header:\n%s", out)
+	}
+	if !strings.Contains(out, "Interface") {
+		t.Errorf("interface-only input should emit an Interface section:\n%s", out)
+	}
+}
+
+func TestJSONFormatter_SummarySeparatesStructsAndInterfaces(t *testing.T) {
+	f := &formatter.JSONFormatter{}
+	out, err := f.Format(makeMixedResults()) // 1 struct (Total 88) + 1 interface (Total 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var parsed struct {
+		Summary struct {
+			TotalStructs          int     `json:"total_structs"`
+			AverageScore          float64 `json:"average_score"`
+			TotalInterfaces       int     `json:"total_interfaces"`
+			InterfaceAverageScore float64 `json:"interface_average_score"`
+		} `json:"summary"`
+	}
+	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	s := parsed.Summary
+	// total_structs must count structs only — not interfaces.
+	if s.TotalStructs != 1 {
+		t.Errorf("total_structs = %d, want 1 (interfaces excluded)", s.TotalStructs)
+	}
+	if s.TotalInterfaces != 1 {
+		t.Errorf("total_interfaces = %d, want 1", s.TotalInterfaces)
+	}
+	// average_score must be the struct-only average, not the struct/interface blend.
+	if s.AverageScore != 88.0 {
+		t.Errorf("average_score = %.1f, want 88.0 (struct-only, not blended with interface)", s.AverageScore)
+	}
+	if s.InterfaceAverageScore != 100.0 {
+		t.Errorf("interface_average_score = %.1f, want 100.0", s.InterfaceAverageScore)
+	}
+}
+
+func TestJSONFormatter_EmitsIsInterface(t *testing.T) {
+	f := &formatter.JSONFormatter{}
+	out, err := f.Format(makeMixedResults())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var parsed struct {
+		Results []struct {
+			Name        string   `json:"name"`
+			IsInterface bool     `json:"is_interface"`
+			SRP         *float64 `json:"srp"`
+			ISP         *float64 `json:"isp"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	byName := make(map[string]struct {
+		IsInterface bool
+		SRP         *float64
+		ISP         *float64
+	})
+	for _, r := range parsed.Results {
+		byName[r.Name] = struct {
+			IsInterface bool
+			SRP         *float64
+			ISP         *float64
+		}{r.IsInterface, r.SRP, r.ISP}
+	}
+	if !byName["MyIface"].IsInterface {
+		t.Error("MyIface should have is_interface=true")
+	}
+	if byName["MyStruct"].IsInterface {
+		t.Error("MyStruct should have is_interface=false")
+	}
+	// Unevaluated principles on the interface remain null (distinct from 0.0).
+	if byName["MyIface"].SRP != nil {
+		t.Errorf("MyIface.srp should be null, got %v", *byName["MyIface"].SRP)
+	}
+	if byName["MyIface"].ISP == nil {
+		t.Error("MyIface.isp should be present")
 	}
 }

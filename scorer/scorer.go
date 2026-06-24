@@ -18,10 +18,15 @@ type ScoreResult struct {
 	TargetName string
 	TargetFile string
 	TargetLine int
-	Scores     map[analyzer.Principle]float64
-	Total      float64
-	Confidence map[analyzer.Principle]float64
-	Details    map[analyzer.Principle][]string
+	// IsInterface is true when the target is an interface definition rather
+	// than a struct. Interfaces are scored on ISP alone, so their Total is not
+	// comparable to a struct's five-principle Total; formatters use this to
+	// present the two kinds in separate sections.
+	IsInterface bool
+	Scores      map[analyzer.Principle]float64
+	Total       float64
+	Confidence  map[analyzer.Principle]float64
+	Details     map[analyzer.Principle][]string
 }
 
 // targetID computes the canonical identity for a target. It is the single
@@ -85,6 +90,14 @@ func (s *Scorer) Score(pkg *model.PackageInfo) []*ScoreResult {
 					Details:    make(map[analyzer.Principle][]string),
 				}
 				resultsByTarget[key] = sr
+			}
+			// Only the ISP analyzer ever sets TargetIsInterface, and a struct
+			// and an interface cannot share a name within one package, so this
+			// flag is consistent across analyzers regardless of their order.
+			// OR-ing it in (rather than overwriting) keeps it stable even if a
+			// struct-only analyzer reports the same key first with false.
+			if r.TargetIsInterface {
+				sr.IsInterface = true
 			}
 			sr.Scores[r.Principle] = r.Score
 			sr.Confidence[r.Principle] = r.Confidence

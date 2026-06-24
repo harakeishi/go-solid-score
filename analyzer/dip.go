@@ -61,11 +61,13 @@ func (a *DIPAnalyzer) analyzeStruct(s *model.StructInfo, pkg *model.PackageInfo)
 	var dw depWeight
 	var concreteDeps []string
 
-	// Analyze struct fields (highest weight - structural dependencies)
+	// Analyze struct fields (highest weight - structural dependencies).
+	// Embedded fields (Name == "") are NOT skipped: embedding is the tightest
+	// form of structural coupling, so an embedded concrete type is a concrete
+	// dependency and an embedded interface is an abstraction dependency — both
+	// belong in the ratio. skipDep still filters whitelisted value types,
+	// callbacks, and self-references (recursive embeds) for embedded fields too.
 	for _, f := range s.Fields {
-		if f.Name == "" {
-			continue // skip embedded fields
-		}
 		if a.skipDep(f.TypeName, f.IsIface, f.IsFunc, f.IsValue, s.Name) {
 			continue
 		}
@@ -73,7 +75,11 @@ func (a *DIPAnalyzer) analyzeStruct(s *model.StructInfo, pkg *model.PackageInfo)
 		if f.IsIface {
 			dw.iface += fieldDepWeight
 		} else {
-			concreteDeps = append(concreteDeps, fmt.Sprintf("field %s: %s", f.Name, f.TypeName))
+			name := f.Name
+			if name == "" {
+				name = "(embedded)"
+			}
+			concreteDeps = append(concreteDeps, fmt.Sprintf("field %s: %s", name, f.TypeName))
 		}
 	}
 
@@ -194,6 +200,19 @@ func (a *DIPAnalyzer) analyzeStruct(s *model.StructInfo, pkg *model.PackageInfo)
 // dependencies such as `db *sql.DB` or `workers []*Worker`. A container *of
 // interfaces* (e.g. `handlers []Handler`) is kept as an abstraction dependency.
 func (a *DIPAnalyzer) skipDep(typeName string, isIface, isFunc, isValue bool, structName string) bool {
+	// Invariant: an interface dependency is always an abstraction and is never
+	// skipped — counting it is the whole point of DIP. Establishing this once up
+	// front means every rule below (whitelist, value-type, self-reference) is
+	// understood to apply to non-interface types only, so none of them needs to
+	// re-check !isIface. Erasing a whitelisted interface (io.Reader, error, …)
+	// previously let a co-occurring concrete dependency drag the ratio to 0.
+	//
+	// A struct and an interface cannot share a name in one package, so an
+	// interface field is never a self-reference; returning here changes no
+	// existing behavior, it only consolidates the rule.
+	if isIface {
+		return false
+	}
 	if isWhitelisted(typeName, a.userWhitelist) {
 		return true
 	}
@@ -203,7 +222,7 @@ func (a *DIPAnalyzer) skipDep(typeName string, isIface, isFunc, isValue bool, st
 	if isFunc || strings.HasPrefix(coreTypeName(typeName), "func(") {
 		return true
 	}
-	if isValue && !isIface {
+	if isValue {
 		return true
 	}
 	return isSelfReference(typeName, structName)

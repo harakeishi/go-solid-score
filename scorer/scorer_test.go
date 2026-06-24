@@ -195,3 +195,42 @@ func TestScorer_MultipleStructs(t *testing.T) {
 		t.Fatalf("expected 2 results, got %d", len(results))
 	}
 }
+
+// TestScorer_PropagatesIsInterface verifies that the interface flag set by the
+// ISP analyzer reaches the merged ScoreResult, and that it stays true even when
+// a struct-only analyzer reports the same target first with the flag false
+// (the flag is OR-ed in, not overwritten).
+func TestScorer_PropagatesIsInterface(t *testing.T) {
+	analyzers := []analyzer.Analyzer{
+		// A struct-only analyzer reports "Iface" first with the flag false.
+		&stubAnalyzer{
+			principle: analyzer.LSP,
+			results: []analyzer.Result{
+				{Principle: analyzer.LSP, TargetName: "Iface", TargetFile: "i.go", Score: 100, TargetIsInterface: false},
+				{Principle: analyzer.LSP, TargetName: "Plain", TargetFile: "p.go", Score: 100, TargetIsInterface: false},
+			},
+		},
+		// The ISP analyzer then reports "Iface" as an interface.
+		&stubAnalyzer{
+			principle: analyzer.ISP,
+			results: []analyzer.Result{
+				{Principle: analyzer.ISP, TargetName: "Iface", TargetFile: "i.go", Score: 100, TargetIsInterface: true},
+				{Principle: analyzer.ISP, TargetName: "Plain", TargetFile: "p.go", Score: 80, TargetIsInterface: false},
+			},
+		},
+	}
+
+	s := scorer.New(analyzers, config.DefaultWeights())
+	results := s.Score(&model.PackageInfo{Name: "test"})
+
+	byName := make(map[string]*scorer.ScoreResult)
+	for _, r := range results {
+		byName[r.TargetName] = r
+	}
+	if !byName["Iface"].IsInterface {
+		t.Error("Iface should be marked IsInterface=true even when reported false first")
+	}
+	if byName["Plain"].IsInterface {
+		t.Error("Plain should be IsInterface=false")
+	}
+}

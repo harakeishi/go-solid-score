@@ -140,13 +140,14 @@ func (a *ISPAnalyzer) analyzeStruct(s *model.StructInfo, pkg *model.PackageInfo)
 // composition pattern.
 func (a *ISPAnalyzer) analyzeInterface(iface *model.InterfaceInfo, pkg *model.PackageInfo) Result {
 	r := Result{
-		Principle:  ISP,
-		TargetPkg:  pkg.PkgPath,
-		TargetName: iface.Name,
-		TargetFile: iface.File,
-		TargetLine: iface.Line,
-		Score:      100,
-		Confidence: ConfidenceMedium,
+		Principle:         ISP,
+		TargetPkg:         pkg.PkgPath,
+		TargetName:        iface.Name,
+		TargetFile:        iface.File,
+		TargetLine:        iface.Line,
+		TargetIsInterface: true,
+		Score:             100,
+		Confidence:        ConfidenceMedium,
 	}
 
 	// NOTE: these method-count thresholds are mirrored by the struct-side
