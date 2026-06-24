@@ -51,15 +51,25 @@ var stdlibWhitelist = map[string]bool{
 	"big.Float":         true,
 	"template.Template": true,
 	// sql.DB, sql.Tx etc. are concrete - not whitelisted for DIP
-	"tls.Config":               true,
-	"x509.Certificate":         true,
-	"exec.Cmd":                 true,
-	"filepath.WalkFunc":        true,
-	"context.CancelFunc":       true,
+	"tls.Config":         true,
+	"x509.Certificate":   true,
+	"exec.Cmd":           true,
+	"filepath.WalkFunc":  true,
+	"context.CancelFunc": true,
+	// The whole sync/atomic value-holder family. These have a struct underlying
+	// type (not a basic type), so IsValueType does not recognize them and they
+	// rely entirely on this list. List the family uniformly — omitting any
+	// member makes equivalent concurrency primitives score DIP=100 vs DIP=0.
+	// atomic.Pointer[T] is generic; coreTypeName strips the [T] so the bare
+	// "atomic.Pointer" entry matches.
 	"atomic.Value":             true,
+	"atomic.Bool":              true,
 	"atomic.Int32":             true,
 	"atomic.Int64":             true,
-	"atomic.Bool":              true,
+	"atomic.Uint32":            true,
+	"atomic.Uint64":            true,
+	"atomic.Uintptr":           true,
+	"atomic.Pointer":           true,
 	"flag.FlagSet":             true,
 	"io.ReadCloser":            true,
 	"io.WriteCloser":           true,
@@ -152,6 +162,13 @@ func coreTypeName(typeName string) string {
 			}
 			s = s[idx+1:]
 		default:
+			// Strip generic type arguments so a named generic like
+			// "atomic.Pointer[int]" reduces to "atomic.Pointer". The "[]" slice
+			// prefix is handled above, so a "[" here that is not at position 0
+			// can only open a type-argument list.
+			if i := strings.IndexByte(s, '['); i > 0 {
+				return s[:i]
+			}
 			return s
 		}
 	}

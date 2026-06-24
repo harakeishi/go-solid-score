@@ -16,6 +16,9 @@ func TestCoreTypeName(t *testing.T) {
 		"map[string][]*Tree":     "Tree",
 		"map[Key]map[string]Bar": "Bar",
 		"func(...)":              "func(...)",
+		"atomic.Pointer[int]":    "atomic.Pointer",
+		"*atomic.Pointer[*Foo]":  "atomic.Pointer",
+		"[]atomic.Pointer[Bar]":  "atomic.Pointer",
 	}
 	for in, want := range cases {
 		if got := coreTypeName(in); got != want {
@@ -35,6 +38,26 @@ func TestIsWhitelistedContainers(t *testing.T) {
 	}
 	if isWhitelisted("map[string]*sql.DB", nil) {
 		t.Error("isWhitelisted(map[string]*sql.DB) = true, want false (sql.DB is concrete)")
+	}
+}
+
+// TestIsWhitelistedAtomicFamily guards against scoring sync/atomic value
+// holders inconsistently. atomic.Uint64 etc. have a struct underlying type, so
+// they are not recognized as value types and rely entirely on the whitelist;
+// omitting any of the family makes equivalent concurrency primitives split
+// between DIP=100 and DIP=0. The whole family must be whitelisted uniformly.
+func TestIsWhitelistedAtomicFamily(t *testing.T) {
+	family := []string{
+		"atomic.Value", "atomic.Bool",
+		"atomic.Int32", "atomic.Int64",
+		"atomic.Uint32", "atomic.Uint64",
+		"atomic.Uintptr",
+		"atomic.Pointer", "atomic.Pointer[int]",
+	}
+	for _, ty := range family {
+		if !isWhitelisted(ty, nil) {
+			t.Errorf("isWhitelisted(%q) = false, want true (atomic family must be uniform)", ty)
+		}
 	}
 }
 
