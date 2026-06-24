@@ -227,6 +227,40 @@ func TestTextFormatter_InterfaceOnlyHasNoStructSection(t *testing.T) {
 	}
 }
 
+func TestJSONFormatter_SummarySeparatesStructsAndInterfaces(t *testing.T) {
+	f := &formatter.JSONFormatter{}
+	out, err := f.Format(makeMixedResults()) // 1 struct (Total 88) + 1 interface (Total 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var parsed struct {
+		Summary struct {
+			TotalStructs          int     `json:"total_structs"`
+			AverageScore          float64 `json:"average_score"`
+			TotalInterfaces       int     `json:"total_interfaces"`
+			InterfaceAverageScore float64 `json:"interface_average_score"`
+		} `json:"summary"`
+	}
+	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	s := parsed.Summary
+	// total_structs must count structs only — not interfaces.
+	if s.TotalStructs != 1 {
+		t.Errorf("total_structs = %d, want 1 (interfaces excluded)", s.TotalStructs)
+	}
+	if s.TotalInterfaces != 1 {
+		t.Errorf("total_interfaces = %d, want 1", s.TotalInterfaces)
+	}
+	// average_score must be the struct-only average, not the struct/interface blend.
+	if s.AverageScore != 88.0 {
+		t.Errorf("average_score = %.1f, want 88.0 (struct-only, not blended with interface)", s.AverageScore)
+	}
+	if s.InterfaceAverageScore != 100.0 {
+		t.Errorf("interface_average_score = %.1f, want 100.0", s.InterfaceAverageScore)
+	}
+}
+
 func TestJSONFormatter_EmitsIsInterface(t *testing.T) {
 	f := &formatter.JSONFormatter{}
 	out, err := f.Format(makeMixedResults())

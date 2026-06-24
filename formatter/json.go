@@ -70,10 +70,16 @@ func (r JSONResult) Principles() map[string]float64 {
 	return m
 }
 
-// JSONSummary is the aggregate block of the JSON document.
+// JSONSummary is the aggregate block of the JSON document. Structs and
+// interfaces are summarized separately: an interface is scored on ISP alone, so
+// its Total is not comparable to a struct's five-principle Total, and blending
+// the two (or counting interfaces under total_structs) is meaningless. This
+// mirrors the two-section split in the text formatter.
 type JSONSummary struct {
-	TotalStructs int     `json:"total_structs"`
-	AverageScore float64 `json:"average_score"`
+	TotalStructs          int     `json:"total_structs"`
+	AverageScore          float64 `json:"average_score"`
+	TotalInterfaces       int     `json:"total_interfaces"`
+	InterfaceAverageScore float64 `json:"interface_average_score"`
 }
 
 func (f *JSONFormatter) Format(results []*scorer.ScoreResult) (string, error) {
@@ -81,7 +87,8 @@ func (f *JSONFormatter) Format(results []*scorer.ScoreResult) (string, error) {
 		Results: make([]JSONResult, 0, len(results)),
 	}
 
-	var totalSum float64
+	var structSum, ifaceSum float64
+	var structCount, ifaceCount int
 	for _, r := range results {
 		conf := make(map[string]float64)
 		for p, c := range r.Confidence {
@@ -115,16 +122,20 @@ func (f *JSONFormatter) Format(results []*scorer.ScoreResult) (string, error) {
 			Confidence:  conf,
 		}
 		out.Results = append(out.Results, jr)
-		totalSum += r.Total
+		if r.IsInterface {
+			ifaceSum += r.Total
+			ifaceCount++
+		} else {
+			structSum += r.Total
+			structCount++
+		}
 	}
 
-	avg := 0.0
-	if len(results) > 0 {
-		avg = math.Round(totalSum/float64(len(results))*10) / 10
-	}
 	out.Summary = JSONSummary{
-		TotalStructs: len(results),
-		AverageScore: avg,
+		TotalStructs:          structCount,
+		AverageScore:          roundAvg(structSum, structCount),
+		TotalInterfaces:       ifaceCount,
+		InterfaceAverageScore: roundAvg(ifaceSum, ifaceCount),
 	}
 
 	data, err := json.MarshalIndent(out, "", "  ")
@@ -132,4 +143,13 @@ func (f *JSONFormatter) Format(results []*scorer.ScoreResult) (string, error) {
 		return "", err
 	}
 	return string(data) + "\n", nil
+}
+
+// roundAvg returns the mean of sum over count, rounded to one decimal place, or
+// 0 when count is zero.
+func roundAvg(sum float64, count int) float64 {
+	if count == 0 {
+		return 0
+	}
+	return math.Round(sum/float64(count)*10) / 10
 }
