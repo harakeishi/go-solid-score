@@ -8,6 +8,7 @@ import (
 	"go/parser"
 	"go/token"
 	"path/filepath"
+	"strings"
 
 	"golang.org/x/tools/go/packages"
 
@@ -37,9 +38,20 @@ func Parse(patterns []string) ([]*model.PackageInfo, error) {
 		return nil, fmt.Errorf("loading packages: %w", err)
 	}
 
+	// packages.Load reports per-package failures (e.g. a directory with Go
+	// files but no go.mod, or a type error) in pkg.Errors rather than the
+	// top-level err. We skip packages that failed to load, but track their
+	// errors so a load that produced no usable package surfaces as an error
+	// instead of an empty result. Otherwise the CLI would print "No structs
+	// found" and exit 0, which a CI gate reads as "passed" even though nothing
+	// was analyzed.
 	var result []*model.PackageInfo
+	var loadErrs []string
 	for _, pkg := range pkgs {
 		if len(pkg.Errors) > 0 {
+			for _, e := range pkg.Errors {
+				loadErrs = append(loadErrs, e.Error())
+			}
 			continue
 		}
 		pi := extractPackageInfo(pkg)
@@ -47,6 +59,14 @@ func Parse(patterns []string) ([]*model.PackageInfo, error) {
 			result = append(result, pi)
 		}
 	}
+
+	// Only fail when nothing could be analyzed. If at least one package loaded
+	// cleanly, a partial failure should not abort the whole run — those errors
+	// are reported separately by the caller.
+	if len(result) == 0 && len(loadErrs) > 0 {
+		return nil, fmt.Errorf("loading packages: %s", strings.Join(loadErrs, "; "))
+	}
+
 	return result, nil
 }
 
