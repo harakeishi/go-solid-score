@@ -122,20 +122,34 @@ func analyze(cfg *config.Config, patterns []string) ([]*scorer.ScoreResult, erro
 	if err != nil {
 		return nil, err
 	}
-	return scorePackages(cfg, pkgs), nil
+	return scorePackages(cfg, pkgs)
+}
+
+// newAnalyzers builds one analyzer per principle, all sharing a single scoring
+// engine compiled from the effective rule set (presets + user customizations).
+// It returns an error when a user rule has a malformed condition.
+func newAnalyzers(cfg *config.Config) ([]analyzer.Analyzer, error) {
+	engine, err := cfg.Engine()
+	if err != nil {
+		return nil, fmt.Errorf("building scoring rules: %w", err)
+	}
+	return []analyzer.Analyzer{
+		analyzer.NewRuleAnalyzer(analyzer.SRP, engine, nil),
+		analyzer.NewRuleAnalyzer(analyzer.OCP, engine, nil),
+		analyzer.NewRuleAnalyzer(analyzer.LSP, engine, nil),
+		analyzer.NewRuleAnalyzer(analyzer.ISP, engine, nil),
+		analyzer.NewRuleAnalyzer(analyzer.DIP, engine, cfg.DIP.Whitelist),
+	}, nil
 }
 
 // scorePackages scores already-parsed packages. Splitting it from analyze lets
 // a caller that also needs the parsed packages (e.g. evaluate, which collects
 // inline labels from the same syntax) parse once and feed the result to both,
 // rather than loading — and fully building — the same source twice.
-func scorePackages(cfg *config.Config, pkgs []*model.PackageInfo) []*scorer.ScoreResult {
-	analyzers := []analyzer.Analyzer{
-		analyzer.NewSRPAnalyzer(),
-		analyzer.NewOCPAnalyzer(),
-		analyzer.NewLSPAnalyzer(),
-		analyzer.NewISPAnalyzer(),
-		analyzer.NewDIPAnalyzer(cfg.DIP.Whitelist),
+func scorePackages(cfg *config.Config, pkgs []*model.PackageInfo) ([]*scorer.ScoreResult, error) {
+	analyzers, err := newAnalyzers(cfg)
+	if err != nil {
+		return nil, err
 	}
 
 	s := scorer.New(analyzers, cfg.Weights)
@@ -143,5 +157,5 @@ func scorePackages(cfg *config.Config, pkgs []*model.PackageInfo) []*scorer.Scor
 	for _, pkg := range pkgs {
 		allResults = append(allResults, s.Score(pkg)...)
 	}
-	return allResults
+	return allResults, nil
 }

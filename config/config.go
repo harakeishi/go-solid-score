@@ -6,6 +6,9 @@ import (
 	"os"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/harakeishi/go-solid-score/analyzer"
+	"github.com/harakeishi/go-solid-score/rules"
 )
 
 // Config holds the configuration for go-solid-score.
@@ -17,6 +20,30 @@ type Config struct {
 	Thresholds map[string]float64 `yaml:"thresholds"`
 	MinScore   float64            `yaml:"min_score"`
 	DIP        DIPConfig          `yaml:"dip"`
+
+	// Rules holds user-defined scoring rules. A rule whose `id` matches a
+	// built-in preset replaces that preset (in place); a new `id` adds a rule.
+	// See rules/presets.yaml for the schema and the built-in rules to copy.
+	Rules []rules.Rule `yaml:"rules"`
+	// DisableRules lists preset rule ids to switch off without redefining them.
+	DisableRules []string `yaml:"disable_rules"`
+	// RuleDefaults overrides the per-principle starting score/confidence.
+	RuleDefaults map[string]rules.Defaults `yaml:"rule_defaults"`
+}
+
+// RuleSet returns the effective rule set: the built-in presets with the user's
+// custom rules, disabled ids, and default overrides merged in.
+func (c *Config) RuleSet() rules.RuleSet {
+	user := rules.RuleSet{Defaults: c.RuleDefaults, Rules: c.Rules}
+	return rules.Merge(rules.DefaultRuleSet(), user, c.DisableRules)
+}
+
+// Engine builds the scoring engine from the effective rule set. It validates
+// the merged rules — surfacing malformed conditions, no-op rules, and
+// references to unknown (e.g. misspelled) metrics — so configuration mistakes
+// are reported rather than silently mis-scoring.
+func (c *Config) Engine() (*rules.Engine, error) {
+	return rules.NewEngine(c.RuleSet(), analyzer.MetricNames()...)
 }
 
 // DIPConfig holds DIP-specific configuration.
@@ -95,6 +122,15 @@ func Load(path string) (*Config, error) {
 	}
 	if len(fileCfg.DIP.Whitelist) > 0 {
 		cfg.DIP.Whitelist = fileCfg.DIP.Whitelist
+	}
+	if len(fileCfg.Rules) > 0 {
+		cfg.Rules = fileCfg.Rules
+	}
+	if len(fileCfg.DisableRules) > 0 {
+		cfg.DisableRules = fileCfg.DisableRules
+	}
+	if len(fileCfg.RuleDefaults) > 0 {
+		cfg.RuleDefaults = fileCfg.RuleDefaults
 	}
 
 	return cfg, nil

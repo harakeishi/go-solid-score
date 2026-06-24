@@ -74,6 +74,10 @@ dip:
     - "mypackage.MyConcreteType"
 ```
 
+The `weights` and `thresholds` above control aggregation and pass/fail gating.
+To change the **scoring rules themselves** — retune a preset, disable one, or
+add your own — see [Customizing Scoring Rules](#customizing-scoring-rules).
+
 ### Default Weights
 
 | Principle | Weight |
@@ -84,9 +88,95 @@ dip:
 | ISP       | 0.20   |
 | DIP       | 0.25   |
 
+## Customizing Scoring Rules
+
+The scoring logic is **data-driven**. Every penalty, bonus, and threshold lives
+in a declarative rule set rather than in code, so you can retune the built-in
+presets, switch any of them off, or add entirely new rules of your own — all
+from `.go-solid-score.yaml`, without recompiling.
+
+A rule reads one **metric**, optionally checks a `when` condition (and `where`
+preconditions), then applies an **effect** to the target's running score. Rules
+for a principle run top to bottom; each starts from the score the previous rule
+left, and the final score is clamped to `[0, 100]`.
+
+```yaml
+# Turn a preset off completely.
+disable_rules:
+  - ocp-type-switch
+
+# Override a preset (same id) or add a new rule (new id).
+# NOTE: overriding by id replaces the ENTIRE rule — copy all of the preset's
+# fields and change what you need. A rule that ends up doing nothing (e.g. only
+# `id` + `cap`) is rejected with an error rather than silently dropping the
+# preset, and a misspelled `metric` is rejected too.
+rules:
+  # Soften the SRP cohesion penalty to half strength.
+  - id: srp-cohesion          # matches a preset id -> replaces it in place
+    principle: SRP
+    metric: srp_cohesion_penalty
+    when: "> 0"
+    effect: penalty
+    from_metric: true         # amount = metric value × scale
+    scale: 0.5
+
+  # A brand-new rule: penalize any struct with more than 6 methods.
+  - id: custom-too-many-methods
+    principle: SRP
+    metric: method_count
+    when: "> 6"
+    effect: penalty           # penalty | bonus | set | none
+    value: 5
+
+# Optionally change the starting score/confidence for a principle. Either field
+# may be set on its own; the unspecified one keeps its preset value.
+rule_defaults:
+  SRP: { base_score: 100, base_confidence: 1.0 }
+```
+
+### Rule fields
+
+| Field | Meaning |
+|-------|---------|
+| `id` | Unique id. A user rule with a **matching id replaces the whole preset** in place (copy all its fields); a **new id is appended**. |
+| `principle` | `SRP` / `OCP` / `LSP` / `ISP` / `DIP`. |
+| `target` | `struct` (default), `interface`, or `both`. |
+| `metric` | The metric the rule reads (see below). |
+| `when` | Condition on the metric, e.g. `"> 40"`, `">= 0.15"`, `"== 0"`. Omit for "always". |
+| `where` | List of extra preconditions, e.g. `["structural_dep_total == 0"]`; all must hold. |
+| `effect` | `penalty` (subtract, default), `bonus` (add), `set` (assign), `none` (confidence-only). |
+| `value` | Literal amount for the effect. |
+| `from_metric` / `scale` | Derive the amount from the metric value × `scale` (default 1). |
+| `cap` | Maximum magnitude of a penalty/bonus. |
+| `bands` | Ordered `{ when, value, effect?, message? }` list; the first match applies. |
+| `confidence` | When the rule matches, sets the result confidence. |
+| `stop` | Stop evaluating further rules for the target when matched. |
+| `enabled` | Set `false` to disable (same as listing the id in `disable_rules`). |
+
+### Available metrics
+
+Structs expose: `method_count`, `public_method_count`, `field_count`,
+`has_fields`, `lcom4`, `srp_cohesion_penalty`, `srp_avg_component_size`,
+`total_complexity`, `type_switch_count`, `type_assert_count`, `reflect_count`,
+`total_stmts`, `type_check_density`, `iface_param_count`,
+`implements_interface`, `unconditional_panic_count`, `noop_count`,
+`embed_missing_override_count`, `is_decorator`, `public_lcom4`,
+`isp_large_iface_penalty`, `isp_composition_bonus`, `weighted_dep_total`,
+`weighted_dep_iface`, `structural_dep_total`, `iface_dep_ratio`,
+`has_constructor_injection`. Interfaces expose: `total_methods`,
+`direct_methods`, `embed_count`. Boolean metrics are `0` or `1`.
+
+The complete set of built-in rules — and the reference for the schema above —
+is [`rules/presets.yaml`](rules/presets.yaml). Copy any rule from there into
+your config to retune it.
+
 ## Scoring Logic
 
 Each struct is scored 0–100 per principle. The total score is a weighted average of all five.
+
+The five principles below ship as the **default rule set** (see
+[Customizing Scoring Rules](#customizing-scoring-rules)); the descriptions
+reflect the preset values.
 
 <details>
 <summary>SRP — Single Responsibility Principle</summary>

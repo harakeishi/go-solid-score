@@ -1,0 +1,385 @@
+# Default SOLID scoring rules for go-solid-score.
+#
+# This file is embedded into the binary and defines the built-in scoring
+# behavior for the five SOLID principles. It is also the reference for writing
+# your own rules: copy a rule into your .go-solid-score.yaml under `rules:`,
+# give it the same `id` to override a preset (or a new `id` to add a rule), set
+# `enabled: false` to switch one off, or list its id under `disable_rules:`.
+#
+# A rule reads one `metric`, optionally checks `where` preconditions and a
+# `when` condition, then applies an `effect` (penalty | bonus | set | none) to
+# the target's running score. Rules for a principle run top to bottom, each
+# starting from the score the previous rule left. See README for the full
+# metric vocabulary.
+
+defaults:
+  SRP: { base_score: 100, base_confidence: 1.0 }
+  OCP: { base_score: 100, base_confidence: 0.7 }
+  LSP: { base_score: 100, base_confidence: 0.7 }
+  ISP: { base_score: 100, base_confidence: 0.7 }
+  DIP: { base_score: 100, base_confidence: 1.0 }
+
+rules:
+  # ----------------------------- SRP -----------------------------
+  # Single Responsibility, measured via LCOM4 cohesion plus size/complexity.
+  - id: srp-too-few-methods
+    principle: SRP
+    metric: method_count
+    when: "<= 1"
+    effect: none
+    confidence: 0.3
+    stop: true
+    message: "too few methods for meaningful LCOM4 analysis"
+
+  - id: srp-stateless
+    principle: SRP
+    metric: method_count
+    where: ["has_fields == 0"]
+    when: "<= 5"
+    effect: set
+    value: 80
+    confidence: 0.3
+    stop: true
+    message: "stateless struct (no fields): LCOM4 not applicable, minimum score applied"
+
+  - id: srp-confidence-low
+    principle: SRP
+    metric: method_count
+    when: "<= 3"
+    effect: none
+    confidence: 0.5
+
+  - id: srp-confidence-medium
+    principle: SRP
+    metric: method_count
+    where: ["method_count >= 4"]
+    when: "<= 4"
+    effect: none
+    confidence: 0.7
+
+  - id: srp-confidence-high
+    principle: SRP
+    metric: method_count
+    when: ">= 5"
+    effect: none
+    confidence: 1.0
+
+  - id: srp-cohesion
+    principle: SRP
+    metric: srp_cohesion_penalty
+    when: "> 0"
+    effect: penalty
+    from_metric: true
+    message: "low cohesion (LCOM4): -%v penalty"
+
+  # A heavily attenuated cohesion penalty marks a large structured aggregate
+  # rather than a fragmented type, so its SRP signal is weaker and confidence is
+  # reduced. The threshold is the average component size at which the original
+  # attenuation reaches 0.5: avg >= 3 + 0.5*7/0.75 = 7.66666..., so an exact
+  # boundary case such as 23 methods over LCOM4=3 is included.
+  - id: srp-cohesion-confidence
+    principle: SRP
+    metric: srp_avg_component_size
+    where: ["lcom4 >= 2"]
+    when: ">= 7.66666"
+    effect: none
+    confidence: 0.7
+
+  - id: srp-complexity
+    principle: SRP
+    metric: total_complexity
+    bands:
+      - { when: "> 40", value: 20, message: "high total complexity (%v)" }
+      - { when: "> 20", value: 10, message: "moderate total complexity (%v)" }
+
+  - id: srp-method-count
+    principle: SRP
+    metric: method_count
+    bands:
+      - { when: "> 15", value: 15, message: "too many methods (%v)" }
+      - { when: "> 10", value: 5, message: "many methods (%v)" }
+
+  # ----------------------------- OCP -----------------------------
+  # Open/Closed, penalizing type switches/assertions/reflection.
+  - id: ocp-no-methods
+    principle: OCP
+    metric: method_count
+    when: "== 0"
+    effect: none
+    confidence: 0.3
+    stop: true
+
+  - id: ocp-type-switch
+    principle: OCP
+    metric: type_switch_count
+    when: "> 0"
+    effect: penalty
+    from_metric: true
+    scale: 15
+    cap: 40
+    message: "%v type switches detected"
+
+  - id: ocp-type-assert
+    principle: OCP
+    metric: type_assert_count
+    when: "> 0"
+    effect: penalty
+    from_metric: true
+    scale: 10
+    cap: 40
+    message: "%v type assertions detected"
+
+  - id: ocp-reflect
+    principle: OCP
+    metric: reflect_count
+    when: "> 0"
+    effect: penalty
+    from_metric: true
+    scale: 5
+    cap: 20
+    message: "%v reflect usages detected"
+
+  - id: ocp-density
+    principle: OCP
+    metric: type_check_density
+    where: ["total_stmts > 0"]
+    bands:
+      - { when: "> 0.3", value: 20, message: "high type-check density (%v)" }
+      - { when: "> 0.15", value: 10 }
+
+  - id: ocp-iface-param-bonus
+    principle: OCP
+    metric: iface_param_count
+    when: "> 0"
+    effect: bonus
+    from_metric: true
+    scale: 5
+    cap: 20
+    message: "bonus for %v interface parameters"
+
+  - id: ocp-confidence-high
+    principle: OCP
+    metric: method_count
+    when: ">= 5"
+    effect: none
+    confidence: 1.0
+
+  # ----------------------------- LSP -----------------------------
+  # Liskov Substitution, flagging panic/no-op/under-override of contracts.
+  - id: lsp-no-interface
+    principle: LSP
+    metric: implements_interface
+    when: "== 0"
+    effect: none
+    confidence: 0.3
+    stop: true
+    message: "no interface implementations detected"
+
+  - id: lsp-implements
+    principle: LSP
+    metric: implements_interface
+    when: ">= 1"
+    effect: none
+    confidence: 0.85
+
+  - id: lsp-unconditional-panic
+    principle: LSP
+    metric: unconditional_panic_count
+    when: "> 0"
+    effect: penalty
+    from_metric: true
+    scale: 20
+    message: "%v interface method(s) panic unconditionally (possible LSP violation)"
+
+  - id: lsp-noop
+    principle: LSP
+    metric: noop_count
+    when: "> 0"
+    effect: penalty
+    from_metric: true
+    scale: 15
+    message: "%v no-op interface method(s)"
+
+  - id: lsp-embed-missing-override
+    principle: LSP
+    metric: embed_missing_override_count
+    when: "> 0"
+    effect: penalty
+    from_metric: true
+    scale: 10
+    message: "%v embedded-interface method(s) not overridden"
+
+  # ----------------------------- ISP (structs) -----------------------------
+  # Interface Segregation on a struct's public surface.
+  - id: isp-no-public-methods
+    principle: ISP
+    target: struct
+    metric: public_method_count
+    when: "== 0"
+    effect: none
+    confidence: 0.3
+    stop: true
+    message: "no public methods"
+
+  - id: isp-decorator
+    principle: ISP
+    target: struct
+    metric: is_decorator
+    when: "== 1"
+    effect: set
+    value: 85
+    confidence: 0.85
+    stop: true
+    message: "decorator/adapter pattern detected"
+
+  - id: isp-struct-size
+    principle: ISP
+    target: struct
+    metric: public_method_count
+    effect: set
+    bands:
+      - { when: "> 20", value: 20, message: "%v public methods (severely bloated interface)" }
+      - { when: "> 15", value: 40, message: "%v public methods (fat interface)" }
+      - { when: "> 10", value: 60, message: "%v public methods (too many for one type)" }
+      - { when: "> 5", value: 80, message: "%v public methods (consider splitting)" }
+
+  - id: isp-large-interface
+    principle: ISP
+    target: struct
+    metric: isp_large_iface_penalty
+    when: "> 0"
+    effect: penalty
+    from_metric: true
+    message: "implements one or more large interfaces"
+
+  - id: isp-composition-bonus
+    principle: ISP
+    target: struct
+    metric: isp_composition_bonus
+    when: "> 0"
+    effect: bonus
+    from_metric: true
+    message: "implements interface(s) built by composition"
+
+  - id: isp-public-cohesion
+    principle: ISP
+    target: struct
+    metric: public_lcom4
+    where: ["public_method_count >= 4"]
+    when: "> 2"
+    effect: penalty
+    value: 15
+    message: "low public interface cohesion (LCOM4=%v)"
+
+  - id: isp-struct-confidence
+    principle: ISP
+    target: struct
+    metric: public_method_count
+    when: ">= 5"
+    effect: none
+    confidence: 0.85
+
+  # ----------------------------- ISP (interfaces) -----------------------------
+  # Interface Segregation on interface definitions — the principle's true subject.
+  - id: isp-interface-size
+    principle: ISP
+    target: interface
+    metric: total_methods
+    effect: set
+    bands:
+      - { when: "> 15", value: 20, message: "%v methods (severely bloated interface)" }
+      - { when: "> 10", value: 40, message: "%v methods (fat interface)" }
+      - { when: "> 7", value: 60, message: "%v methods (large interface)" }
+      - { when: "> 5", value: 75, message: "%v methods (consider splitting)" }
+      - { when: "> 3", value: 90 }
+
+  - id: isp-interface-composition
+    principle: ISP
+    target: interface
+    metric: embed_count
+    where: ["direct_methods <= 5"]
+    when: "> 0"
+    effect: bonus
+    value: 15
+    message: "composes %v embedded interface(s)"
+
+  - id: isp-interface-confidence-methods
+    principle: ISP
+    target: interface
+    metric: total_methods
+    when: ">= 8"
+    effect: none
+    confidence: 0.85
+
+  - id: isp-interface-confidence-embed
+    principle: ISP
+    target: interface
+    metric: embed_count
+    when: "> 0"
+    effect: none
+    confidence: 0.85
+
+  # ----------------------------- DIP -----------------------------
+  # Dependency Inversion, scored on the interface vs concrete dependency ratio.
+  - id: dip-no-dependencies
+    principle: DIP
+    metric: weighted_dep_total
+    when: "== 0"
+    effect: none
+    confidence: 0.3
+    stop: true
+    message: "no dependencies; DIP not applicable"
+
+  # Only call-time (method-parameter) dependencies, no owned ones: score is the
+  # interface ratio floored at a neutral 50, with low confidence.
+  - id: dip-calltime-floor
+    principle: DIP
+    metric: iface_dep_ratio
+    where: ["structural_dep_total == 0"]
+    when: "< 0.5"
+    effect: set
+    value: 50
+    confidence: 0.3
+    stop: true
+    message: "only call-time (method-parameter) dependencies; DIP weakly applicable"
+
+  - id: dip-calltime
+    principle: DIP
+    metric: iface_dep_ratio
+    where: ["structural_dep_total == 0"]
+    effect: set
+    from_metric: true
+    scale: 100
+    confidence: 0.3
+    stop: true
+    message: "only call-time (method-parameter) dependencies; DIP weakly applicable"
+
+  - id: dip-ratio
+    principle: DIP
+    metric: iface_dep_ratio
+    effect: set
+    from_metric: true
+    scale: 100
+    message: "weighted interface dependency ratio"
+
+  - id: dip-di-bonus
+    principle: DIP
+    metric: has_constructor_injection
+    when: "== 1"
+    effect: bonus
+    value: 15
+    message: "constructor uses dependency injection"
+
+  - id: dip-confidence-high
+    principle: DIP
+    metric: weighted_dep_total
+    when: ">= 3"
+    effect: none
+    confidence: 0.85
+
+  - id: dip-confidence-medium
+    principle: DIP
+    metric: weighted_dep_total
+    where: ["weighted_dep_total < 3"]
+    effect: none
+    confidence: 0.7
