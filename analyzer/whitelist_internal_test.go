@@ -61,6 +61,24 @@ func TestIsWhitelistedAtomicFamily(t *testing.T) {
 	}
 }
 
+// TestIsWhitelistedReflectFamily guards against scoring reflect value/metadata
+// holders as concrete DIP dependencies. reflect.Value/StructField/Method have a
+// struct underlying type (not basic), so IsValueType does not recognize them
+// and they rely entirely on the whitelist — the same reasoning that put the
+// sync/atomic family here. A pure-data struct holding reflect metadata must not
+// be flagged as a DIP violation.
+func TestIsWhitelistedReflectFamily(t *testing.T) {
+	family := []string{
+		"reflect.Value", "reflect.Type", "reflect.Kind",
+		"reflect.StructField", "reflect.Method",
+	}
+	for _, ty := range family {
+		if !isWhitelisted(ty, nil) {
+			t.Errorf("isWhitelisted(%q) = false, want true (reflect metadata holders are value types)", ty)
+		}
+	}
+}
+
 func TestIsSelfReference(t *testing.T) {
 	if !isSelfReference("[]*Command", "Command") {
 		t.Error("[]*Command should be a self-reference of Command")

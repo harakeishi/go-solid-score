@@ -50,6 +50,16 @@ var stdlibWhitelist = map[string]bool{
 	"big.Int":           true,
 	"big.Float":         true,
 	"template.Template": true,
+	// reflect metadata holders. reflect.Value/StructField/Method have a struct
+	// underlying type, so (like the atomic family below) IsValueType does not
+	// recognize them and they must be listed explicitly; reflect.Type/Kind are
+	// reflection metadata, not injected collaborators. A struct holding these is
+	// pure data, not a DIP dependency to invert.
+	"reflect.Value":       true,
+	"reflect.Type":        true,
+	"reflect.Kind":        true,
+	"reflect.StructField": true,
+	"reflect.Method":      true,
 	// sql.DB, sql.Tx etc. are concrete - not whitelisted for DIP
 	"tls.Config":         true,
 	"x509.Certificate":   true,
