@@ -39,6 +39,10 @@ type ParamInfo struct {
 	// basic type (pure data) rather than a struct/interface collaborator.
 	// Collections of structs or interfaces are not value types.
 	IsValue bool
+	// IsData reports whether the parameter's core element type is a named struct
+	// with no methods — a pure data holder (DTO/value object). See
+	// FieldInfo.IsData for the rationale.
+	IsData bool
 }
 
 // ReturnInfo represents a function/method return type.

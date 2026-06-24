@@ -28,6 +28,13 @@ type FieldInfo struct {
 	// of structs or interfaces are NOT value types: their element is a
 	// collaborator that DIP still weighs.
 	IsValue bool
+	// IsData reports whether the field's core element type is a named struct
+	// with no methods — a pure data holder (DTO/value object). Unlike IsValue
+	// (builtin basics), this captures user-defined data structs such as
+	// []cmdOption. DIP still counts it as concrete (no false negatives) but
+	// lowers confidence, because a methodless struct dependency is ambiguous:
+	// a genuine collaborator vs. a nested data aggregate.
+	IsData bool
 }
 
 // PublicMethods returns methods with exported names.

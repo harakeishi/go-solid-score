@@ -100,6 +100,7 @@ func ExtractFieldInfo(field *ast.Field, info *types.Info) *model.FieldInfo {
 			fi.IsIface = IsInterfaceType(tv)
 			fi.IsFunc = IsFuncType(tv)
 			fi.IsValue = IsValueType(tv)
+			fi.IsData = IsMethodlessDataStruct(tv)
 		}
 	}
 	return fi
@@ -191,16 +192,18 @@ func ExtractParams(fl *ast.FieldList, info *types.Info) []*model.ParamInfo {
 		isIface := false
 		isFunc := false
 		isValue := false
+		isData := false
 		if info != nil && f.Type != nil {
 			tv := info.TypeOf(f.Type)
 			if tv != nil {
 				isIface = IsInterfaceType(tv)
 				isFunc = IsFuncType(tv)
 				isValue = IsValueType(tv)
+				isData = IsMethodlessDataStruct(tv)
 			}
 		}
 		if len(f.Names) == 0 {
-			params = append(params, &model.ParamInfo{TypeName: typeName, IsIface: isIface, IsFunc: isFunc, IsValue: isValue})
+			params = append(params, &model.ParamInfo{TypeName: typeName, IsIface: isIface, IsFunc: isFunc, IsValue: isValue, IsData: isData})
 		}
 		for _, name := range f.Names {
 			params = append(params, &model.ParamInfo{
@@ -209,6 +212,7 @@ func ExtractParams(fl *ast.FieldList, info *types.Info) []*model.ParamInfo {
 				IsIface:  isIface,
 				IsFunc:   isFunc,
 				IsValue:  isValue,
+				IsData:   isData,
 			})
 		}
 	}
