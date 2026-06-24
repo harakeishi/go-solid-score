@@ -1,10 +1,35 @@
 package isp
 
 // FatInterface forces implementors to depend on methods they don't use.
+// solid:want ISP=violation reason="Martin ISP / Pike 'the bigger the interface, the weaker the abstraction': 11 methods force clients to depend on methods they don't use — the interface-definition recall guard"
 type FatInterface interface {
 	Read(p []byte) (int, error)
 	Write(p []byte) (int, error)
 	Close() error
+	Seek(offset int64, whence int) (int64, error)
+	Stat() (string, error)
+	Sync() error
+	Truncate(size int64) error
+	ReadAt(p []byte, off int64) (int, error)
+	WriteAt(p []byte, off int64) (int, error)
+	Lock() error
+	Unlock() error
+}
+
+// Closer is a small role interface, embedded by FatEmbedInterface below.
+// solid:want ISP=ok reason="single-method role interface (io.Closer idiom); minimal client coupling"
+type Closer interface {
+	Close() error
+}
+
+// FatEmbedInterface embeds a small role interface (Closer) but still declares
+// 10 methods directly. It is structurally a fat interface — the single embed
+// must NOT rescue it from the ISP violation threshold.
+// solid:want ISP=violation reason="11 effective methods (10 declared directly + 1 embedded); embedding a single role interface does not make a directly-bloated interface ISP-faithful — guards against the embed-bonus false negative"
+type FatEmbedInterface interface {
+	Closer
+	Read(p []byte) (int, error)
+	Write(p []byte) (int, error)
 	Seek(offset int64, whence int) (int64, error)
 	Stat() (string, error)
 	Sync() error
