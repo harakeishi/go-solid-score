@@ -17,12 +17,13 @@ import (
 // means each command instance has its own state — safe for parallel tests and
 // free of hidden shared mutation between root and diff.
 type diffFlags struct {
-	base      string
-	maxDrop   float64
-	minScore  float64
-	failOnReg bool
-	format    string
-	cfgFile   string
+	base       string
+	maxDrop    float64
+	minScore   float64
+	noiseFloor float64
+	failOnReg  bool
+	format     string
+	cfgFile    string
 }
 
 func newDiffCmd() *cobra.Command {
@@ -45,6 +46,7 @@ func newDiffCmd() *cobra.Command {
 	cmd.Flags().StringVar(&f.base, "base", "", "Baseline JSON file to compare against (required)")
 	cmd.Flags().Float64Var(&f.maxDrop, "max-drop", 5.0, "A total drop greater than this is a regression")
 	cmd.Flags().Float64Var(&f.minScore, "min-score", 0, "A new target below this is NEW-LOW (0 disables)")
+	cmd.Flags().Float64Var(&f.noiseFloor, "noise-floor", 0, "Treat a total or per-principle move at or below this as UNCHANGED (0 disables)")
 	cmd.Flags().BoolVar(&f.failOnReg, "fail-on-regression", false, "Exit 1 if any regression or new-low exists")
 	cmd.Flags().StringVarP(&f.format, "format", "f", "text", "Output format: text, json, markdown")
 	cmd.Flags().StringVarP(&f.cfgFile, "config", "c", ".go-solid-score.yaml", "Config file path")
@@ -122,8 +124,9 @@ func runDiff(f *diffFlags, args []string) error {
 	head := resultsToSnapshots(headResults)
 
 	report := differ.Diff(base, head, differ.Options{
-		MaxDrop:  f.maxDrop,
-		MinScore: f.minScore,
+		MaxDrop:    f.maxDrop,
+		MinScore:   f.minScore,
+		NoiseFloor: f.noiseFloor,
 	})
 
 	var out string

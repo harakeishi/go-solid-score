@@ -167,3 +167,88 @@ func TestDiff_MinScoreDisabled(t *testing.T) {
 		t.Error("a lone NEW must not mark the report regressed")
 	}
 }
+
+// snapP builds a snapshot with per-principle scores for noise-floor tests.
+func snapP(id string, total float64, principles map[string]float64) differ.Snapshot {
+	return differ.Snapshot{ID: id, Name: id, Package: "pkg", Total: total, Principles: principles}
+}
+
+// TestDiff_NoiseFloorSuppressesSubFloorDrop: a total drop at or below the noise
+// floor is UNCHANGED, not REGRESSED, even when MaxDrop would otherwise flag it.
+func TestDiff_NoiseFloorSuppressesSubFloorDrop(t *testing.T) {
+	base := []differ.Snapshot{snap("pkg.A", 80.0)}
+	head := []differ.Snapshot{snap("pkg.A", 79.6)} // 0.4 drop
+
+	// With MaxDrop=0 the 0.4 drop would be REGRESSED; a 0.5 noise floor absorbs it.
+	r := differ.Diff(base, head, differ.Options{MaxDrop: 0, NoiseFloor: 0.5})
+	if got := statusOf(r, "pkg.A"); got != differ.StatusUnchanged {
+		t.Errorf("sub-floor drop should be UNCHANGED, got %q", got)
+	}
+	if r.Regressed {
+		t.Error("report should not be marked regressed for a sub-floor drop")
+	}
+}
+
+// TestDiff_NoiseFloorSuppressesSubFloorImprovement: improvements are gated
+// symmetrically — a tiny gain within the floor is not reported as IMPROVED.
+func TestDiff_NoiseFloorSuppressesSubFloorImprovement(t *testing.T) {
+	base := []differ.Snapshot{snap("pkg.A", 80.0)}
+	head := []differ.Snapshot{snap("pkg.A", 80.4)} // 0.4 gain
+
+	r := differ.Diff(base, head, differ.Options{NoiseFloor: 0.5})
+	if got := statusOf(r, "pkg.A"); got != differ.StatusUnchanged {
+		t.Errorf("sub-floor improvement should be UNCHANGED, got %q", got)
+	}
+}
+
+// TestDiff_NoiseFloorStillFlagsRealMove: a move beyond the floor is classified
+// as usual — the floor only suppresses sub-floor wobble.
+func TestDiff_NoiseFloorStillFlagsRealMove(t *testing.T) {
+	base := []differ.Snapshot{snap("pkg.A", 80.0)}
+	head := []differ.Snapshot{snap("pkg.A", 73.0)} // 7.0 drop > floor and > MaxDrop
+
+	r := differ.Diff(base, head, differ.Options{MaxDrop: 5, NoiseFloor: 0.5})
+	if got := statusOf(r, "pkg.A"); got != differ.StatusRegressed {
+		t.Errorf("supra-floor drop beyond MaxDrop should be REGRESSED, got %q", got)
+	}
+}
+
+// TestDiff_NoiseFloorDominatesMaxDrop: when the floor exceeds MaxDrop, the floor
+// wins — a sub-floor move is never a regression regardless of MaxDrop.
+func TestDiff_NoiseFloorDominatesMaxDrop(t *testing.T) {
+	base := []differ.Snapshot{snap("pkg.A", 80.0)}
+	head := []differ.Snapshot{snap("pkg.A", 78.5)} // 1.5 drop
+
+	r := differ.Diff(base, head, differ.Options{MaxDrop: 1.0, NoiseFloor: 2.0})
+	if got := statusOf(r, "pkg.A"); got != differ.StatusUnchanged {
+		t.Errorf("floor (2.0) should dominate MaxDrop (1.0): want UNCHANGED, got %q", got)
+	}
+}
+
+// TestDiff_NoiseFloorFiltersPrincipleDeltas: a per-principle move within the
+// floor is omitted from the breakdown, while a supra-floor one is kept.
+func TestDiff_NoiseFloorFiltersPrincipleDeltas(t *testing.T) {
+	base := []differ.Snapshot{snapP("pkg.A", 80.0, map[string]float64{"SRP": 60, "DIP": 90})}
+	head := []differ.Snapshot{snapP("pkg.A", 74.0, map[string]float64{"SRP": 59.6, "DIP": 80})}
+
+	r := differ.Diff(base, head, differ.Options{MaxDrop: 5, NoiseFloor: 0.5})
+	e := entryOf(r, "pkg.A")
+	if e == nil {
+		t.Fatal("pkg.A not found")
+	}
+	if len(e.PrincipleDeltas) != 1 || e.PrincipleDeltas[0].Principle != "DIP" {
+		t.Errorf("expected only the DIP delta to survive the floor, got %+v", e.PrincipleDeltas)
+	}
+}
+
+// TestDiff_ZeroNoiseFloorIsBackwardCompatible: with the floor disabled (0), any
+// non-zero move is reported exactly as before.
+func TestDiff_ZeroNoiseFloorIsBackwardCompatible(t *testing.T) {
+	base := []differ.Snapshot{snap("pkg.A", 80.0)}
+	head := []differ.Snapshot{snap("pkg.A", 79.9)} // 0.1 drop
+
+	r := differ.Diff(base, head, differ.Options{MaxDrop: 0, NoiseFloor: 0})
+	if got := statusOf(r, "pkg.A"); got != differ.StatusRegressed {
+		t.Errorf("with floor disabled, a 0.1 drop past MaxDrop=0 is REGRESSED, got %q", got)
+	}
+}

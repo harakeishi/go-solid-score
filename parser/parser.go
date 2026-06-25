@@ -16,9 +16,22 @@ import (
 	"github.com/harakeishi/go-solid-score/model"
 )
 
-// Parse loads Go packages and extracts model information.
+// Parse loads Go packages and extracts model information. It resolves the
+// patterns relative to the current working directory (and therefore the
+// enclosing module).
 func Parse(patterns []string) ([]*model.PackageInfo, error) {
+	return ParseInDir("", patterns)
+}
+
+// ParseInDir is like Parse but resolves patterns relative to dir, loading them
+// as the module rooted there rather than the current working directory's
+// module. An empty dir behaves exactly like Parse. This lets callers score a
+// self-contained module elsewhere on disk — e.g. the stability harness, which
+// materializes transformed copies of a fixture into temporary modules and
+// scores each in isolation.
+func ParseInDir(dir string, patterns []string) ([]*model.PackageInfo, error) {
 	cfg := &packages.Config{
+		Dir: dir,
 		Mode: packages.NeedName |
 			packages.NeedFiles |
 			packages.NeedSyntax |

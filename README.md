@@ -385,12 +385,44 @@ code for accurate matching.
 | `--base` | (required) | Baseline JSON to compare against |
 | `--max-drop` | 5.0 | A total drop greater than this is a regression |
 | `--min-score` | 0 | A new target below this is NEW-LOW (0 disables) |
+| `--noise-floor` | 0 | Treat a total or per-principle move at or below this as UNCHANGED (0 disables) |
 | `--fail-on-regression` | false | Exit 1 on any regression or new-low |
 | `-f, --format` | text | `text`, `json`, or `markdown` |
 
 See [`.github/workflows/solid-diff.yml`](.github/workflows/solid-diff.yml) for a
 PR-comment workflow (requires `pull-requests: write`; fork PRs fall back to a
 job summary).
+
+### The noise floor (`--noise-floor`)
+
+When you diff two scores produced by the **same tool build**, the scorer is
+deterministic, so any score move is a real design change — the measured noise
+floor is zero (see below). But when the two sides come from **different builds**
+(e.g. a baseline captured weeks ago, then a diff after upgrading the tool and its
+recalibrated heuristics), small moves can reflect the instrument changing rather
+than your code. `--noise-floor N` treats any total or per-principle move of `N`
+or less as UNCHANGED, in both directions, so only changes above the instrument's
+resolution are reported. It gates *whether a change is real at all*; `--max-drop`
+then decides whether a real drop is large enough to be a regression.
+
+The floor is grounded in the minimum-detectable-change idea from measurement
+theory: below it, a move is wobble, not signal. Set it from the observed
+cross-build spread on unchanged code; leave it at `0` when both sides come from
+one build.
+
+### Measuring the noise floor itself (reliability)
+
+The accuracy harness below measures whether scores agree with expert judgement.
+A second harness, [`stability/`](stability), measures the complementary
+property — **reliability**: whether the scorer returns the *same* number for code
+whose meaning did not change. It applies semantics-preserving transformations
+(declaration reordering, receiver renaming, comment injection — the metamorphic
+testing approach used to validate static analyzers like PMD/CheckStyle) to a
+fixture and asserts every score is unchanged at display resolution. Because the
+scorer is deterministic, the expected floor is exactly zero; a non-zero result is
+a precision bug of the kind past calibration fixed (e.g. an LCOM4 penalty that
+swung on whether a method textually touched a receiver field). The harness runs
+as an ordinary `go test ./stability/...` and so gates every PR via the test job.
 
 ## Measuring scoring accuracy (precision / recall)
 
