@@ -1,0 +1,224 @@
+name: go-solid-score
+description: >-
+  Score Go source against the SOLID principles in CI — gate on a minimum score,
+  or diff a PR against its base branch and post the regression as a comment.
+author: harakeishi
+branding:
+  icon: check-circle
+  color: purple
+
+inputs:
+  mode:
+    description: >-
+      What to do: "check" runs the scorer over `paths` and fails when a score is
+      below `min-score`; "diff" compares the PR against its base commit, posts a
+      sticky comment (or job summary on fork PRs), and can fail on regressions.
+    required: false
+    default: check
+  version:
+    description: >-
+      go-solid-score release to use, e.g. "v1.2.3", or "latest" for the most
+      recent release.
+    required: false
+    default: latest
+  paths:
+    description: Package patterns to analyze (space-separated).
+    required: false
+    default: ./...
+  config:
+    description: Path to a .go-solid-score.yaml config file (optional).
+    required: false
+    default: ""
+  min-score:
+    description: >-
+      Minimum acceptable score. In "check" mode any target below this fails the
+      run; in "diff" mode a new target below this is flagged NEW-LOW. 0 disables.
+    required: false
+    default: "0"
+  # diff-mode inputs
+  max-drop:
+    description: '[diff] A total score drop greater than this counts as a regression.'
+    required: false
+    default: "5.0"
+  fail-on-regression:
+    description: '[diff] Fail the run (exit 1) on any regression or new-low.'
+    required: false
+    default: "false"
+  comment:
+    description: >-
+      [diff] Post the markdown diff as a sticky PR comment. On fork PRs (no write
+      token) it falls back to the job summary regardless of this setting. Set
+      "false" to always use the job summary.
+    required: false
+    default: "true"
+  github-token:
+    description: '[diff] Token used to post the PR comment.'
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  exit-code:
+    description: The exit code of the go-solid-score invocation (0 = pass).
+    value: ${{ steps.run.outputs.exit-code }}
+
+runs:
+  using: composite
+  steps:
+    # Resolve & download the released binary for the current runner (no Go
+    # toolchain required). Linux/macOS use tar.gz; Windows uses zip.
+    - name: Install go-solid-score
+      id: install
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        INPUT_VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        repo="harakeishi/go-solid-score"
+
+        # Resolve "latest" to a concrete tag via the releases API.
+        version="$INPUT_VERSION"
+        if [ "$version" = "latest" ]; then
+          version="$(gh api "repos/${repo}/releases/latest" --jq .tag_name)"
+        fi
+        ver_no_v="${version#v}"
+
+        # Map the runner OS/arch to goreleaser's archive naming.
+        case "$RUNNER_OS" in
+          Linux)   os=linux;   ext=tar.gz ;;
+          macOS)   os=darwin;  ext=tar.gz ;;
+          Windows) os=windows; ext=zip ;;
+          *) echo "::error::unsupported runner OS: $RUNNER_OS"; exit 1 ;;
+        esac
+        case "$RUNNER_ARCH" in
+          X64)   arch=amd64 ;;
+          ARM64) arch=arm64 ;;
+          *) echo "::error::unsupported runner arch: $RUNNER_ARCH"; exit 1 ;;
+        esac
+
+        asset="go-solid-score_${ver_no_v}_${os}_${arch}.${ext}"
+        dest="$RUNNER_TEMP/gss-install"
+        mkdir -p "$dest"
+        echo "Downloading $asset ($version)"
+        gh release download "$version" --repo "$repo" --pattern "$asset" --dir "$dest"
+
+        if [ "$ext" = "zip" ]; then
+          unzip -o "$dest/$asset" -d "$dest" >/dev/null
+          bin="$dest/go-solid-score.exe"
+        else
+          tar -xzf "$dest/$asset" -C "$dest"
+          bin="$dest/go-solid-score"
+        fi
+        chmod +x "$bin"
+        echo "bin=$bin" >> "$GITHUB_OUTPUT"
+        echo "version=$version" >> "$GITHUB_OUTPUT"
+
+    # check mode: score paths and gate on min-score.
+    - name: Run (check)
+      id: run-check
+      if: inputs.mode == 'check'
+      shell: bash
+      env:
+        GSS_BIN: ${{ steps.install.outputs.bin }}
+        INPUT_PATHS: ${{ inputs.paths }}
+        INPUT_CONFIG: ${{ inputs.config }}
+        INPUT_MIN_SCORE: ${{ inputs.min-score }}
+      run: |
+        set -uo pipefail
+        args=()
+        [ -n "$INPUT_CONFIG" ] && args+=(-c "$INPUT_CONFIG")
+        [ "$INPUT_MIN_SCORE" != "0" ] && args+=(--min-score "$INPUT_MIN_SCORE")
+        # shellcheck disable=SC2086
+        "$GSS_BIN" "${args[@]}" $INPUT_PATHS
+        code=$?
+        echo "exit-code=$code" >> "$GITHUB_OUTPUT"
+        exit $code
+
+    # diff mode: score the PR base commit, diff, and report.
+    - name: Score base commit (diff)
+      if: inputs.mode == 'diff'
+      shell: bash
+      env:
+        GSS_BIN: ${{ steps.install.outputs.bin }}
+        INPUT_PATHS: ${{ inputs.paths }}
+        INPUT_CONFIG: ${{ inputs.config }}
+        BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      run: |
+        set -euo pipefail
+        if [ -z "${BASE_SHA:-}" ]; then
+          echo "::error::diff mode requires a pull_request event (base.sha is empty)."
+          exit 1
+        fi
+        args=()
+        [ -n "$INPUT_CONFIG" ] && args+=(-c "$INPUT_CONFIG")
+        worktree="$RUNNER_TEMP/gss-base"
+        git worktree add "$worktree" "$BASE_SHA"
+        # shellcheck disable=SC2086
+        (cd "$worktree" && "$GSS_BIN" "${args[@]}" -f json $INPUT_PATHS) > "$RUNNER_TEMP/base.json"
+
+    - name: Diff against base (diff)
+      id: run-diff
+      if: inputs.mode == 'diff'
+      shell: bash
+      env:
+        GSS_BIN: ${{ steps.install.outputs.bin }}
+        INPUT_PATHS: ${{ inputs.paths }}
+        INPUT_CONFIG: ${{ inputs.config }}
+        INPUT_MIN_SCORE: ${{ inputs.min-score }}
+        INPUT_MAX_DROP: ${{ inputs.max-drop }}
+        INPUT_FAIL_ON_REGRESSION: ${{ inputs.fail-on-regression }}
+      run: |
+        set -uo pipefail
+        args=(diff --base "$RUNNER_TEMP/base.json")
+        [ -n "$INPUT_CONFIG" ] && args+=(-c "$INPUT_CONFIG")
+        [ "$INPUT_MIN_SCORE" != "0" ] && args+=(--min-score "$INPUT_MIN_SCORE")
+        [ -n "$INPUT_MAX_DROP" ] && args+=(--max-drop "$INPUT_MAX_DROP")
+        [ "$INPUT_FAIL_ON_REGRESSION" = "true" ] && args+=(--fail-on-regression)
+
+        # Markdown for the comment; human-readable copy to the log. Gating is
+        # decided by the markdown run so --fail-on-regression sets the exit code.
+        # shellcheck disable=SC2086
+        "$GSS_BIN" "${args[@]}" -f markdown $INPUT_PATHS > "$RUNNER_TEMP/comment.md"
+        code=$?
+        # shellcheck disable=SC2086
+        "$GSS_BIN" "${args[@]}" $INPUT_PATHS || true
+        echo "exit-code=$code" >> "$GITHUB_OUTPUT"
+
+    # Same-repo PRs: write a sticky comment. Fork PRs lack a write token, so
+    # this is skipped and the summary fallback below runs instead.
+    - name: Comment on PR (diff)
+      if: >-
+        inputs.mode == 'diff' && inputs.comment == 'true' &&
+        github.event.pull_request.head.repo.full_name == github.repository
+      uses: marocchino/sticky-pull-request-comment@v2
+      with:
+        header: go-solid-score-diff
+        path: ${{ runner.temp }}/comment.md
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+
+    - name: Report to job summary (diff fallback)
+      if: >-
+        inputs.mode == 'diff' &&
+        (inputs.comment != 'true' ||
+         github.event.pull_request.head.repo.full_name != github.repository)
+      shell: bash
+      run: cat "$RUNNER_TEMP/comment.md" >> "$GITHUB_STEP_SUMMARY"
+
+    # Surface the diff gate result as the action's own exit code, after the
+    # comment has been posted (so a regression still gets commented before fail).
+    - name: Apply diff gate (diff)
+      if: inputs.mode == 'diff'
+      shell: bash
+      env:
+        CODE: ${{ steps.run-diff.outputs.exit-code }}
+      run: exit "${CODE:-0}"
+
+    # Normalize the exit-code output across modes.
+    - name: Expose exit code
+      id: run
+      shell: bash
+      if: always()
+      env:
+        CHECK_CODE: ${{ steps.run-check.outputs.exit-code }}
+        DIFF_CODE: ${{ steps.run-diff.outputs.exit-code }}
+      run: echo "exit-code=${CHECK_CODE:-${DIFF_CODE:-0}}" >> "$GITHUB_OUTPUT"

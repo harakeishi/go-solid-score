@@ -53,3 +53,17 @@ jobs:
         with:
           go-version-file: go.mod
       - run: scripts/evaluate.sh
+
+  # Smoke-test the composite action (action.yml) so a change that breaks the
+  # download/run wiring is caught here rather than by downstream consumers. Runs
+  # in "check" mode against this repo with a generous floor; the point is that
+  # the action installs the released binary and exits cleanly, not the score.
+  action:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./
+        with:
+          mode: check
+          paths: ./...
+          min-score: "0"
