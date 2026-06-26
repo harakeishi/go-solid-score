@@ -97,10 +97,29 @@ runs:
         esac
 
         asset="go-solid-score_${ver_no_v}_${os}_${arch}.${ext}"
+        checksums="go-solid-score_${ver_no_v}_checksums.txt"
         dest="$RUNNER_TEMP/gss-install"
         mkdir -p "$dest"
         echo "Downloading $asset ($version)"
-        gh release download "$version" --repo "$repo" --pattern "$asset" --dir "$dest"
+        gh release download "$version" --repo "$repo" \
+          --pattern "$asset" --pattern "$checksums" --dir "$dest"
+
+        # Verify the archive against the release checksums before extracting, so
+        # a tampered asset never reaches the C toolchain / execution. The
+        # checksum file lists every asset; -c on the filtered line checks ours.
+        echo "Verifying checksum of $asset"
+        (
+          cd "$dest"
+          line="$(grep "  ${asset}\$" "$checksums")"
+          if [ -z "$line" ]; then
+            echo "::error::no checksum entry for $asset in $checksums"; exit 1
+          fi
+          if command -v sha256sum >/dev/null 2>&1; then
+            printf '%s\n' "$line" | sha256sum -c -
+          else
+            printf '%s\n' "$line" | shasum -a 256 -c -
+          fi
+        )
 
         if [ "$ext" = "zip" ]; then
           unzip -o "$dest/$asset" -d "$dest" >/dev/null

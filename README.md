@@ -29,6 +29,9 @@ A composite action ships in this repo, so you can gate CI on a SOLID score
 without installing a Go toolchain or running `go install` on every run — it
 downloads the released binary for the runner and invokes it.
 
+> The action is available from **v0.3.0** onward. Pin a tag that contains
+> `action.yml` (v0.2.0 and earlier do not).
+
 ### Gate on a minimum score
 
 ```yaml
@@ -40,7 +43,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: harakeishi/go-solid-score@v0.2.0   # pin to a released tag
+      - uses: harakeishi/go-solid-score@v0.3.0   # pin to a released tag
         with:
           min-score: "70"   # fail the run if any target scores below 70
           paths: ./...
@@ -62,7 +65,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0   # diff mode checks out the base commit
-      - uses: harakeishi/go-solid-score@v0.2.0   # pin to a released tag
+      - uses: harakeishi/go-solid-score@v0.3.0   # pin to a released tag
         with:
           mode: diff
           fail-on-regression: "true"   # exit 1 if a target regresses

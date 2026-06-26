@@ -21,7 +21,7 @@ jobs:
 
       # Build the tool from this checkout so the workflow always matches the
       # code under review. (External users instead consume the published action,
-      # `uses: harakeishi/go-solid-score@v0.2.0` — see action.yml and the README.)
+      # `uses: harakeishi/go-solid-score@v0.3.0` — see action.yml and the README.)
       - name: Build go-solid-score
         run: go build -o "$RUNNER_TEMP/gss" .
 
