@@ -137,7 +137,7 @@ func IsValueType(t types.Type) bool {
 // collection level, which marks a held collaborator rather than stored data.
 func isValueElementCollection(t types.Type) bool {
 	sawCollection := false
-	for i := 0; i < 8; i++ {
+	for i := 0; i < unwrapNestDepth; i++ {
 		switch c := t.Underlying().(type) {
 		case *types.Pointer:
 			// A pointer anywhere on the path (the field itself, or the collection
@@ -166,15 +166,26 @@ func isValueElementCollection(t types.Type) bool {
 			return sawCollection
 		}
 	}
+	// Depth bound hit before reaching the core element: whether a pointer sits
+	// below is unknown, so stay conservative and do NOT classify it as data. The
+	// bound is set high enough (unwrapNestDepth) that only pathological or cyclic
+	// types reach here, none of which occur in real field declarations.
 	return false
 }
+
+// unwrapNestDepth bounds how many pointer/collection wrappers the type-unwrapping
+// helpers peel before giving up, guarding against pathological or cyclic type
+// graphs. It is set well above any nesting seen in real field declarations so the
+// bound is only ever hit by degenerate types — keeping the helpers' depth limits
+// in sync so isValueElementCollection and IsValueType agree on the same types.
+const unwrapNestDepth = 16
 
 // unwrapElem peels pointer, slice, array, map (value), and channel wrappers
 // off t (up to a bounded depth) and reports whether the resulting underlying
 // type satisfies match. The depth bound guards against pathological or cyclic
 // type graphs.
 func unwrapElem(t types.Type, match func(types.Type) bool) bool {
-	for i := 0; i < 8; i++ {
+	for i := 0; i < unwrapNestDepth; i++ {
 		u := t.Underlying()
 		if match(u) {
 			return true

@@ -64,6 +64,8 @@ type S struct {
 	barePtr     *Coll             // bare pointer -> collaborator
 	bareStruct  Coll              // bare value struct -> collaborator (not a collection)
 	ifaceSlice  []Iface           // interface element -> abstraction, not data
+	deepVal     [][][][][][][][]Coll // deeply nested value-element collection -> still data
+	deepPtr     [][][][][][][][]*Coll // deeply nested pointer collection -> collaborator
 }`
 	ft := fieldTypes(t, src)
 
@@ -83,6 +85,8 @@ type S struct {
 		{"barePtr", false},
 		{"bareStruct", false},
 		{"ifaceSlice", false},
+		{"deepVal", true},
+		{"deepPtr", false},
 	}
 	for _, tc := range cases {
 		tv := ft[tc.field]
