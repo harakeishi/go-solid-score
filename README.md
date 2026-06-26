@@ -23,6 +23,78 @@ go install github.com/harakeishi/go-solid-score@latest
 
 Or download a binary from the [Releases](https://github.com/harakeishi/go-solid-score/releases) page.
 
+## GitHub Action
+
+A composite action ships in this repo, so you can gate CI on a SOLID score
+without installing a Go toolchain or running `go install` on every run — it
+downloads the released binary for the runner and invokes it.
+
+> The action is available from **v0.3.0** onward. Pin a tag that contains
+> `action.yml` (v0.2.0 and earlier do not).
+
+### Gate on a minimum score
+
+```yaml
+# .github/workflows/solid.yml
+name: SOLID
+on: [push, pull_request]
+jobs:
+  solid:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: harakeishi/go-solid-score@v0.3.0   # pin to a released tag
+        with:
+          min-score: "70"   # fail the run if any target scores below 70
+          paths: ./...
+```
+
+### Comment a PR with the score diff (and fail on regressions)
+
+```yaml
+# .github/workflows/solid-diff.yml
+name: SOLID diff
+on: pull_request
+permissions:
+  contents: read
+  pull-requests: write   # required to post the comment
+jobs:
+  diff:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # diff mode checks out the base commit
+      - uses: harakeishi/go-solid-score@v0.3.0   # pin to a released tag
+        with:
+          mode: diff
+          fail-on-regression: "true"   # exit 1 if a target regresses
+          max-drop: "5.0"
+```
+
+In `diff` mode the action scores the PR's base commit, diffs the current code
+against it, and posts a sticky comment with the per-target/per-principle delta.
+On fork PRs (which run with a read-only token) it falls back to the job summary
+automatically.
+
+### Inputs
+
+| Input | Default | Description |
+|-------|---------|-------------|
+| `mode` | `check` | `check` (gate on `min-score`) or `diff` (compare vs base, comment). |
+| `version` | `latest` | Release tag to use, e.g. `v1.2.3`, or `latest`. |
+| `paths` | `./...` | Package patterns to analyze (space-separated). |
+| `config` | (none) | Path to a `.go-solid-score.yaml` config file. |
+| `min-score` | `0` | `check`: fail below this. `diff`: flag new targets below this as NEW-LOW. `0` disables. |
+| `max-drop` | `5.0` | *(diff)* A total-score drop greater than this counts as a regression. |
+| `fail-on-regression` | `false` | *(diff)* Exit 1 on any regression or new-low. |
+| `comment` | `true` | *(diff)* Post a sticky PR comment (else use the job summary). |
+| `github-token` | `${{ github.token }}` | *(diff)* Token used to post the comment. |
+
+The action fails the step (non-zero exit) when a gate is breached — a score
+below `min-score`, or a regression with `fail-on-regression: true` — so gate on
+the step/job status as usual (e.g. `continue-on-error` + `steps.<id>.outcome`).
+
 ## Usage
 
 ```bash

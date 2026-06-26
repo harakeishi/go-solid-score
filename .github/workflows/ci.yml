@@ -53,3 +53,58 @@ jobs:
         with:
           go-version-file: go.mod
       - run: scripts/evaluate.sh
+
+  # Smoke-test the composite action (action.yml) so a change that breaks the
+  # download/run wiring — or a mistyped CLI flag — is caught here rather than by
+  # downstream consumers. We exercise both modes and assert the exit codes,
+  # since the value of a gate is that it actually fails when it should.
+  action:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write   # diff smoke posts a comment on same-repo PRs
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # diff mode checks out the base commit
+
+      # check / pass: a low floor must succeed (exit 0).
+      - name: check (pass)
+        uses: ./
+        with:
+          mode: check
+          paths: ./...
+          min-score: "1"
+
+      # check / fail: an impossibly high floor must FAIL. This is what proves
+      # the --min-score flag is wired correctly; continue-on-error lets us
+      # assert the failure instead of failing the job.
+      - name: check (expected fail)
+        id: check_fail
+        continue-on-error: true
+        uses: ./
+        with:
+          mode: check
+          paths: ./...
+          min-score: "101"
+      - name: assert check failed
+        # The action's step outputs are not readable once it fails (a composite
+        # action stops at the failing step), so the gate is asserted via the
+        # step outcome — which is exactly what a consumer's `if`/job status sees.
+        env:
+          OUTCOME: ${{ steps.check_fail.outcome }}
+        run: |
+          if [ "$OUTCOME" != "failure" ]; then
+            echo "::error::min-score=101 should have failed the action (outcome=$OUTCOME)"
+            exit 1
+          fi
+
+      # diff: only meaningful on pull_request (needs base.sha). Use the job
+      # summary instead of a comment to avoid side effects on the PR.
+      - name: diff
+        if: github.event_name == 'pull_request'
+        uses: ./
+        with:
+          mode: diff
+          paths: ./...
+          comment: "false"
