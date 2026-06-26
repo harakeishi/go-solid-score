@@ -91,7 +91,9 @@ automatically.
 | `comment` | `true` | *(diff)* Post a sticky PR comment (else use the job summary). |
 | `github-token` | `${{ github.token }}` | *(diff)* Token used to post the comment. |
 
-The action exposes `outputs.exit-code` (the scorer's exit code, `0` = pass).
+The action fails the step (non-zero exit) when a gate is breached — a score
+below `min-score`, or a regression with `fail-on-regression: true` — so gate on
+the step/job status as usual (e.g. `continue-on-error` + `steps.<id>.outcome`).
 
 ## Usage
 

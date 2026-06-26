@@ -88,12 +88,14 @@ jobs:
           paths: ./...
           min-score: "101"
       - name: assert check failed
+        # The action's step outputs are not readable once it fails (a composite
+        # action stops at the failing step), so the gate is asserted via the
+        # step outcome — which is exactly what a consumer's `if`/job status sees.
         env:
           OUTCOME: ${{ steps.check_fail.outcome }}
-          CODE: ${{ steps.check_fail.outputs.exit-code }}
         run: |
-          if [ "$OUTCOME" != "failure" ] || [ "$CODE" = "0" ]; then
-            echo "::error::min-score=101 should have failed (outcome=$OUTCOME code=$CODE)"
+          if [ "$OUTCOME" != "failure" ]; then
+            echo "::error::min-score=101 should have failed the action (outcome=$OUTCOME)"
             exit 1
           fi
 

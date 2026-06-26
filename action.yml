@@ -56,11 +56,6 @@ inputs:
     required: false
     default: ${{ github.token }}
 
-outputs:
-  exit-code:
-    description: The exit code of the go-solid-score invocation (0 = pass).
-    value: ${{ steps.run.outputs.exit-code }}
-
 runs:
   using: composite
   steps:
@@ -134,7 +129,6 @@ runs:
 
     # check mode: score paths and gate on min-score.
     - name: Run (check)
-      id: run-check
       if: inputs.mode == 'check'
       shell: bash
       env:
@@ -148,10 +142,7 @@ runs:
         [ -n "$INPUT_CONFIG" ] && args+=(-c "$INPUT_CONFIG")
         [ "$INPUT_MIN_SCORE" != "0" ] && args+=(--min-score "$INPUT_MIN_SCORE")
         # shellcheck disable=SC2086
-        "$GSS_BIN" "${args[@]}" $INPUT_PATHS
-        code=$?
-        echo "exit-code=$code" >> "$GITHUB_OUTPUT"
-        exit $code
+        exec "$GSS_BIN" "${args[@]}" $INPUT_PATHS
 
     # diff mode: score the PR base commit, diff, and report.
     - name: Score base commit (diff)
@@ -231,13 +222,3 @@ runs:
       env:
         CODE: ${{ steps.run-diff.outputs.exit-code }}
       run: exit "${CODE:-0}"
-
-    # Normalize the exit-code output across modes.
-    - name: Expose exit code
-      id: run
-      shell: bash
-      if: always()
-      env:
-        CHECK_CODE: ${{ steps.run-check.outputs.exit-code }}
-        DIFF_CODE: ${{ steps.run-diff.outputs.exit-code }}
-      run: echo "exit-code=${CHECK_CODE:-${DIFF_CODE:-0}}" >> "$GITHUB_OUTPUT"
