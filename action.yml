@@ -96,8 +96,10 @@ runs:
         dest="$RUNNER_TEMP/gss-install"
         mkdir -p "$dest"
         echo "Downloading $asset ($version)"
+        # --clobber so re-running the action in the same job (a fresh download
+        # into the same RUNNER_TEMP) overwrites rather than erroring out.
         gh release download "$version" --repo "$repo" \
-          --pattern "$asset" --pattern "$checksums" --dir "$dest"
+          --pattern "$asset" --pattern "$checksums" --dir "$dest" --clobber
 
         # Verify the archive against the release checksums before extracting, so
         # a tampered asset never reaches the C toolchain / execution. The
