@@ -94,23 +94,79 @@ func IsFuncType(t types.Type) bool {
 	})
 }
 
-// IsValueType reports whether the *core element* of t — reached by unwrapping
-// pointers, slices, arrays, maps, and channels — is a basic (builtin) type.
-// This captures pure data fields such as int, string, []byte,
-// map[string]string, and named aliases like `type FieldMap map[string]string`,
-// which model data a struct holds rather than a collaborator it calls into, so
-// DIP excludes them.
+// IsValueType reports whether t models data a struct *holds* rather than a
+// collaborator it *calls into*, so DIP excludes it from the dependency ratio.
+// Two shapes qualify as data:
 //
-// Crucially, a collection of a *struct* or *interface* (e.g. []*PaymentService
-// or []Handler) is NOT a value type: its element is a collaborator, so DIP
-// still weighs it — as a concrete dependency for structs, and (via
-// IsInterfaceType) as an abstraction for interfaces. This preserves the true
-// positive that an earlier, blanket "any slice/map is data" rule discarded.
+//   - A field whose *core element* — reached by unwrapping pointers, slices,
+//     arrays, maps, and channels — is a basic (builtin) type: int, string,
+//     []byte, map[string]string, named aliases like `type FieldMap
+//     map[string]string`, and so on.
+//   - A *value-element collection* of a non-basic type — a slice/array/map/chan
+//     whose element is reached without an intervening pointer, e.g. []Message,
+//     map[string]Event, [3]Record. These are overwhelmingly data records the
+//     struct stores (an in-memory store/cache/registry/buffer), not collaborators
+//     it invokes, so penalizing them produced a systematic DIP false positive.
+//
+// Crucially, a *pointer collection* of a struct (e.g. []*PaymentService,
+// map[string]*Conn, []*Worker) is NOT a value type: collaborators are
+// idiomatically held by pointer, so the pointer below the collection marks the
+// element as a concrete collaborator that DIP still weighs. A bare pointer field
+// (`db *sql.DB`, *Service) likewise remains a concrete dependency. This keeps
+// the true positive an earlier blanket "any slice/map is data" rule discarded
+// (see testdata/dip/facade.go Pipeline's []*stage) while skipping data
+// containers like []Message.
 func IsValueType(t types.Type) bool {
-	return unwrapElem(t, func(u types.Type) bool {
+	// Core element is a builtin basic type -> pure data (int, string, []byte, …).
+	if unwrapElem(t, func(u types.Type) bool {
 		_, ok := u.(*types.Basic)
 		return ok
-	})
+	}) {
+		return true
+	}
+	// Otherwise: a value-element collection of a non-basic type is a data
+	// container; a pointer-element collection (or a bare pointer) is a
+	// collaborator and is NOT a value type.
+	return isValueElementCollection(t)
+}
+
+// isValueElementCollection reports whether t is a slice, array, map, or channel
+// whose element is reached *without* passing through a pointer — i.e. a
+// value-element collection such as []Message or map[string]Event, the shape of a
+// data container. It returns false for a bare pointer ([]*T, *T) at or below the
+// collection level, which marks a held collaborator rather than stored data.
+func isValueElementCollection(t types.Type) bool {
+	sawCollection := false
+	for i := 0; i < 8; i++ {
+		switch c := t.Underlying().(type) {
+		case *types.Pointer:
+			// A pointer anywhere on the path (the field itself, or the collection
+			// element) signals a collaborator held by reference, not stored data.
+			return false
+		case *types.Slice:
+			sawCollection = true
+			t = c.Elem()
+		case *types.Array:
+			sawCollection = true
+			t = c.Elem()
+		case *types.Map:
+			sawCollection = true
+			t = c.Elem()
+		case *types.Chan:
+			sawCollection = true
+			t = c.Elem()
+		case *types.Interface:
+			// An interface element (`[]Handler`) is an abstraction dependency, not
+			// stored data — IsInterfaceType handles it. Never treat it as data.
+			return false
+		default:
+			// Reached a non-collection, non-pointer, non-interface core element
+			// (e.g. a struct): it is data only if we arrived here through at least
+			// one collection.
+			return sawCollection
+		}
+	}
+	return false
 }
 
 // unwrapElem peels pointer, slice, array, map (value), and channel wrappers

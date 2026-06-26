@@ -33,9 +33,13 @@ const (
 //     concrete coupling to invert nor an interface collaborator;
 //   - a pure-data value type — one whose core element is a builtin basic type
 //     (int, string, map[string]string, named aliases like `type FieldMap
-//     map[string]string`, …). These hold data, not collaborators. A collection
-//     of structs (e.g. `[]*PaymentService`) is deliberately NOT skipped here:
-//     its element is a concrete collaborator and remains a concrete dependency;
+//     map[string]string`, …), or a *value-element collection* of a struct
+//     (`[]Message`, `map[string]Event`). These hold data records the struct
+//     stores, not collaborators it calls into. A *pointer* collection of a
+//     struct (e.g. `[]*PaymentService`, `workers []*Worker`) is deliberately NOT
+//     skipped: collaborators are idiomatically held by pointer, so its element
+//     is a concrete collaborator and remains a concrete dependency (see
+//     IsValueType for the value-vs-pointer-element distinction);
 //   - a self-reference — recursive/tree structures are structural composition,
 //     not injected collaborators.
 //
