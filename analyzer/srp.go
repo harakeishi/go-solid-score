@@ -111,3 +111,29 @@ func callsEachOther(a, b *model.MethodInfo) bool {
 	}
 	return false
 }
+
+// calculateLSCC computes the LSCC (Low-level Similarity-based Class Cohesion,
+// Al Dallal & Briand 2012) cohesion metric in [0,1], where 1 is maximally
+// cohesive. For each named field f accessed by x_f methods, the metric sums
+// x_f*(x_f-1) and normalizes by k*l*(l-1) (l methods, k named fields). It
+// returns 0 when the metric is undefined (l <= 1 or k <= 0). Unlike LCOM4 this
+// is a normalized ratio, so a single stateless method dilutes rather than
+// fragments the score; false-positive control is left to the rule thresholds.
+func calculateLSCC(methods []*model.MethodInfo, namedFieldCount int) float64 {
+	l := len(methods)
+	if l <= 1 || namedFieldCount <= 0 {
+		return 0
+	}
+	accessCount := make(map[string]int)
+	for _, m := range methods {
+		for _, f := range m.AccessedFields {
+			accessCount[f]++
+		}
+	}
+	numerator := 0.0
+	for _, x := range accessCount {
+		numerator += float64(x) * float64(x-1)
+	}
+	denominator := float64(namedFieldCount) * float64(l) * float64(l-1)
+	return numerator / denominator
+}
