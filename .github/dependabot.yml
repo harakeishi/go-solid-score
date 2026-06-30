@@ -1,0 +1,22 @@
+version: 2
+updates:
+  # Go モジュールの依存更新。go.sum のチェックサム検証に加え、
+  # 既知脆弱性への追従を自動化する。
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    # 公開直後バージョンの侵害リスクを避けるための cooldown（7日）。
+    # 過去インシデントの 8/10 は公開から1週間以内に検出・削除されており、
+    # 7日の遅延で約8割の攻撃をブロックできる。CVE 対応は cooldown 対象外。
+    cooldown:
+      default-days: 7
+
+  # GitHub Actions の SHA 固定（3.1）を継続的に最新へ追従させる。
+  # SHA で固定したアクションの更新 PR が自動生成される。
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
