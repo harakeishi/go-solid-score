@@ -198,15 +198,33 @@ runs:
 
     # Same-repo PRs: write a sticky comment. Fork PRs lack a write token, so
     # this is skipped and the summary fallback below runs instead.
+    # Uses the official actions/github-script (bundled on every runner, incl.
+    # GitHub Enterprise Server) rather than a third-party action, so the diff
+    # sticky comment works without mirroring extra actions. The markdown body
+    # already starts with the "<!-- go-solid-score-diff -->" marker, which we
+    # match to update the previous comment instead of posting a new one.
     - name: Comment on PR (diff)
       if: >-
         inputs.mode == 'diff' && inputs.comment == 'true' &&
         github.event.pull_request.head.repo.full_name == github.repository
-      uses: marocchino/sticky-pull-request-comment@v2
+      uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
       with:
-        header: go-solid-score-diff
-        path: ${{ runner.temp }}/comment.md
-        GITHUB_TOKEN: ${{ inputs.github-token }}
+        github-token: ${{ inputs.github-token }}
+        script: |
+          const fs = require('fs');
+          const marker = '<!-- go-solid-score-diff -->';
+          const body = fs.readFileSync(process.env.RUNNER_TEMP + '/comment.md', 'utf8');
+          const { owner, repo } = context.repo;
+          const issue_number = context.issue.number;
+          const comments = await github.paginate(github.rest.issues.listComments, {
+            owner, repo, issue_number,
+          });
+          const existing = comments.find((c) => c.body && c.body.includes(marker));
+          if (existing) {
+            await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+          } else {
+            await github.rest.issues.createComment({ owner, repo, issue_number, body });
+          }
 
     - name: Report to job summary (diff fallback)
       if: >-
