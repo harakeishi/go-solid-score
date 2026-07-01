@@ -19,7 +19,7 @@ Go ソースコードを SOLID 原則（SRP / OCP / LSP / ISP / DIP）の観点�
 model.PackageInfo（struct / interface / method / func 情報）
    │  analyzer/metrics.go がメトリクス（事実）を算出
    ▼
-rules.Metrics（"lcom4": 2, "type_switch_count": 3 ... という数値の辞書）
+rules.Metrics（"lscc": 0.8, "type_switch_count": 3 ... という数値の辞書）
    │  rules/engine.go が presets.yaml のルールを上から順に適用
    ▼
 各原則ごとの Outcome（Score / Confidence / Details）
@@ -102,22 +102,27 @@ Total = Σ(score_i × weight_i) / Σ(weight_i)   （小数第1位に丸め）
 
 ## 1. SRP（単一責任の原則）
 
-**考え方**: メソッド群とフィールドの結びつき（凝集度）を **LCOM4** で測り、
+**考え方**: メソッド群とフィールドの結びつき（凝集度）を **LSCC** で測り、
 責任が分裂している型（凝集度が低い型）を減点する。サイズ・複雑度も加味。
 
 ### メトリクス（`analyzer/srp.go`, `metrics.go`）
 
-- **LCOM4**: メソッドをノード、「同じフィールドにアクセス」または「互いを呼び出す」
-  関係をエッジとした無向グラフの**連結成分数**（`calculateLCOM4`）。
-  - 1 なら全メソッドが繋がっている＝凝集が高い。2 以上で責任分裂の疑い。
-  - フィールドにアクセスせず他メソッドとも結合しない単独メソッド
-    （`errors.Is` 規約メソッド等）は成分から除外し、誤検知を防ぐ。
-- **凝集ペナルティ `srp_cohesion_penalty`** (`srpCohesion`):
-  - 基礎ペナルティ `baseLCOM4Penalty`: 成分 2 個で 40、1 個増えるごとに +15、
-    上限 70（線形ランプ）。
-  - **サイズ減衰**: 平均成分サイズ（メソッド数 / LCOM4）が 3〜10 に増えるにつれ
-    ペナルティを 1.0→0.25 へ減衰。大きく構造化された集約型を、小さく断片化した
-    型と同じには罰しないため。
+- **LSCC**（Low-level Similarity-based Class Cohesion, Al Dallal & Briand 2012）:
+  `[0, 1]` に正規化された凝集度で、**1 が最高凝集**（`calculateLSCC`）。
+  - 各**自フィールド** f にアクセスするメソッド数を x_f とし、`Σ x_f·(x_f−1)` を
+    `k·l·(l−1)`（l = 実効メソッド数、k = 自フィールド数）で割った比率。
+  - LCOM4 のような成分数と違い、無状態メソッドはスコアを**分断ではなく希釈**する
+    ため、型のサイズによらず頑健なシグナルになる。
+  - **自フィールドのみを集計**する。他オブジェクト経由のフィールド（`o.x`）・
+    パッケージ変数・埋め込み昇格フィールドは分子に含めない。含めると分母（自
+    フィールド数）と集合がずれ、LSCC が 1 を超えて低凝集を隠してしまうため。
+  - `errors.Is`/`As`/`Unwrap` の規約メソッドはメソッド集合から除外する（引数を
+    見るだけで受信側フィールドを読まない慣習メソッドで、凝集度を不当に下げるため）。
+- **`cohesion_method_count`**: 規約メソッド除外後の実効メソッド数。
+- **`own_field_access_method_count`**: 実効メソッドのうち自フィールドを 1 つ以上
+  読むものの数。これが 2 未満だとフィールド共有が構造上ありえず LSCC は「低い」の
+  ではなく「適用外」なので、規約メソッドしか無い型やパラメータだけで完結する
+  計算型を誤って低凝集と減点しないためのガードに使う。
 - `total_complexity`: 全メソッドの循環的複雑度の合計。
 - `method_count`, `field_count`, `has_fields`。
 
@@ -126,15 +131,17 @@ Total = Σ(score_i × weight_i) / Σ(weight_i)   （小数第1位に丸め）
 | ルール | 条件 | 効果 |
 |--------|------|------|
 | `srp-too-few-methods` | method_count ≤ 1 | 採点せず終了（confidence 0.3） |
-| `srp-stateless` | フィールド無し かつ method_count ≤ 5 | スコア=80 固定で終了（LCOM4 非適用） |
+| `srp-stateless` | フィールド無し かつ method_count ≤ 5 | スコア=80 固定で終了（凝集度 非適用） |
 | `srp-confidence-*` | メソッド数に応じ | 信頼度を 0.5 / 0.7 / 1.0 に設定 |
-| `srp-cohesion` | cohesion_penalty > 0 | その値ぶん減点 |
-| `srp-cohesion-confidence` | 平均成分サイズ ≥ 7.67 | 大型集約とみなし confidence 0.7 |
+| `srp-cohesion` | cohesion_method_count ≥ 2 かつ has_fields かつ own_field_access_method_count ≥ 2 のとき、LSCC の帯で判定 | LSCC < 0.2 / < 0.4 / < 0.6 で -45 / -25 / -10 |
 | `srp-complexity` | 複雑度 > 40 / > 20 | -20 / -10 |
 | `srp-method-count` | メソッド > 15 / > 10 | -15 / -5 |
 
-**ベース 100 点**。凝集度・複雑度・メソッド過多で減点していく。
-フィールドの無い小さなユーティリティ型は LCOM4 が無意味なため一律 80 点固定。
+**ベース 100 点**。凝集度（LSCC が低いほど大きく減点）・複雑度・メソッド過多で
+減点していく。LSCC のしきい値はコードでなく `presets.yaml` の `bands` にあり、
+リポジトリごとに再チューニングできる。フィールドの無い小さなユーティリティ型は
+凝集度が無意味なため一律 80 点固定。自フィールドを読むメソッドが 2 つ未満の型は
+凝集度が「適用外」なので凝集ペナルティを課さない。
 
 ---
 
