@@ -4,27 +4,10 @@ import (
 	"github.com/harakeishi/go-solid-score/model"
 )
 
-// This file holds the SRP cohesion primitives (LCOM4 and its base penalty) that
-// the metric layer reuses. The SRP scoring behavior itself now lives in the
-// declarative rule set (see rules/presets.yaml), computed from the metrics in
-// metrics.go.
-
-// baseLCOM4Penalty maps an LCOM4 component count to the base cohesion penalty.
-// It ramps linearly — 40 at two disconnected groups, +15 for each additional
-// group — and saturates at 70. A ramp (rather than a 40→70 step at three
-// groups) gives the metric resolution above three groups and keeps the final,
-// size-attenuated penalty from jumping discontinuously as the group count rises.
-func baseLCOM4Penalty(lcom4 int) float64 {
-	if lcom4 <= 1 {
-		return 0
-	}
-	const at2, perGroup, maxPenalty = 40.0, 15.0, 70.0
-	p := at2 + perGroup*float64(lcom4-2)
-	if p > maxPenalty {
-		p = maxPenalty
-	}
-	return p
-}
+// This file holds the cohesion primitives the metric layer reuses: LSCC (the
+// SRP cohesion metric) and LCOM4 (retained for ISP's public_lcom4). The SRP
+// scoring behavior itself lives in the declarative rule set (see
+// rules/presets.yaml), computed from the metrics in metrics.go.
 
 // calculateLCOM4 computes the LCOM4 metric: number of connected components
 // in the method-field access graph.
@@ -119,13 +102,34 @@ func callsEachOther(a, b *model.MethodInfo) bool {
 // returns 0 when the metric is undefined (l <= 1 or k <= 0). Unlike LCOM4 this
 // is a normalized ratio, so a single stateless method dilutes rather than
 // fragments the score; false-positive control is left to the rule thresholds.
+// effectiveCohesionMethods returns the method set used for LSCC cohesion,
+// excluding Go convention methods (errors.Is/As/Unwrap). They are
+// framework-protocol methods that idiomatically inspect their argument rather
+// than the receiver's fields, so counting them as non-sharing methods
+// artificially deflates cohesion. The LSCC paper treats the composition of the
+// method set as an application-level decision; the Go errors docs make these
+// signatures a documented convention. Other method kinds (accessors,
+// constructors) are intentionally NOT excluded.
+func effectiveCohesionMethods(methods []*model.MethodInfo) []*model.MethodInfo {
+	effective := make([]*model.MethodInfo, 0, len(methods))
+	for _, m := range methods {
+		if isConventionMethod(m) {
+			continue
+		}
+		effective = append(effective, m)
+	}
+	return effective
+}
+
 func calculateLSCC(methods []*model.MethodInfo, namedFieldCount int) float64 {
-	l := len(methods)
+	effective := effectiveCohesionMethods(methods)
+
+	l := len(effective)
 	if l <= 1 || namedFieldCount <= 0 {
 		return 0
 	}
 	accessCount := make(map[string]int)
-	for _, m := range methods {
+	for _, m := range effective {
 		for _, f := range m.AccessedFields {
 			accessCount[f]++
 		}
@@ -136,4 +140,38 @@ func calculateLSCC(methods []*model.MethodInfo, namedFieldCount int) float64 {
 	}
 	denominator := float64(namedFieldCount) * float64(l) * float64(l-1)
 	return numerator / denominator
+}
+
+// isConventionMethod reports whether m matches one of Go's error-handling
+// convention method signatures: Is(error) bool, As(any) bool, Unwrap() error,
+// or Unwrap() []error. These are framework-protocol methods (documented in the
+// errors package) that inspect their argument or return wrapped state rather
+// than reading the receiver's own fields, so they should not count toward a
+// type's cohesion. Matching is by signature, not name alone, so an unrelated
+// method that merely happens to be named Is/As/Unwrap is not excluded.
+func isConventionMethod(m *model.MethodInfo) bool {
+	param := func(i int) string {
+		if i < len(m.Params) {
+			return m.Params[i].TypeName
+		}
+		return ""
+	}
+	ret := func(i int) string {
+		if i < len(m.Returns) {
+			return m.Returns[i].TypeName
+		}
+		return ""
+	}
+	switch m.Name {
+	case "Is":
+		return len(m.Params) == 1 && param(0) == "error" &&
+			len(m.Returns) == 1 && ret(0) == "bool"
+	case "As":
+		return len(m.Params) == 1 && (param(0) == "any" || param(0) == "interface{}") &&
+			len(m.Returns) == 1 && ret(0) == "bool"
+	case "Unwrap":
+		return len(m.Params) == 0 &&
+			len(m.Returns) == 1 && (ret(0) == "error" || ret(0) == "[]error")
+	}
+	return false
 }
