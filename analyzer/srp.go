@@ -95,13 +95,6 @@ func callsEachOther(a, b *model.MethodInfo) bool {
 	return false
 }
 
-// calculateLSCC computes the LSCC (Low-level Similarity-based Class Cohesion,
-// Al Dallal & Briand 2012) cohesion metric in [0,1], where 1 is maximally
-// cohesive. For each named field f accessed by x_f methods, the metric sums
-// x_f*(x_f-1) and normalizes by k*l*(l-1) (l methods, k named fields). It
-// returns 0 when the metric is undefined (l <= 1 or k <= 0). Unlike LCOM4 this
-// is a normalized ratio, so a single stateless method dilutes rather than
-// fragments the score; false-positive control is left to the rule thresholds.
 // effectiveCohesionMethods returns the method set used for LSCC cohesion,
 // excluding Go convention methods (errors.Is/As/Unwrap). They are
 // framework-protocol methods that idiomatically inspect their argument rather
@@ -121,25 +114,50 @@ func effectiveCohesionMethods(methods []*model.MethodInfo) []*model.MethodInfo {
 	return effective
 }
 
-func calculateLSCC(methods []*model.MethodInfo, namedFieldCount int) float64 {
+// calculateLSCC computes the LSCC (Low-level Similarity-based Class Cohesion,
+// Al Dallal & Briand 2012) cohesion metric in [0,1], where 1 is maximally
+// cohesive. For each of the receiver's OWN named fields f accessed by x_f
+// methods, the metric sums x_f*(x_f-1) and normalizes by k*l*(l-1) (l effective
+// methods, k own named fields). Only fields in ownFields are counted: a
+// method's AccessedFields also contains names read through other objects,
+// package variables, or promoted embedded fields, and counting those against a
+// denominator built solely from own fields let LSCC exceed 1 and masked low
+// cohesion. Restricting to own fields keeps the numerator and denominator over
+// the same set, guaranteeing LSCC in [0,1].
+//
+// It returns 0 when the metric is undefined (l <= 1 or no own fields). The
+// second return, ownFieldMethodCount, is the number of effective methods that
+// read at least one own field — the applicability signal for the srp-cohesion
+// rule. When it is < 2 no field can be shared, so cohesion is not merely low
+// but undefined; the rule guards on it (own_field_access_method_count >= 2) so
+// that a struct whose methods operate purely on parameters is not penalized as
+// "low cohesion" the way the unfiltered metric was.
+func calculateLSCC(methods []*model.MethodInfo, ownFields map[string]bool) (lscc float64, ownFieldMethodCount int) {
 	effective := effectiveCohesionMethods(methods)
 
 	l := len(effective)
-	if l <= 1 || namedFieldCount <= 0 {
-		return 0
+	if l <= 1 || len(ownFields) == 0 {
+		return 0, 0
 	}
 	accessCount := make(map[string]int)
 	for _, m := range effective {
+		touched := false
 		for _, f := range m.AccessedFields {
-			accessCount[f]++
+			if ownFields[f] {
+				accessCount[f]++
+				touched = true
+			}
+		}
+		if touched {
+			ownFieldMethodCount++
 		}
 	}
 	numerator := 0.0
 	for _, x := range accessCount {
 		numerator += float64(x) * float64(x-1)
 	}
-	denominator := float64(namedFieldCount) * float64(l) * float64(l-1)
-	return numerator / denominator
+	denominator := float64(len(ownFields)) * float64(l) * float64(l-1)
+	return numerator / denominator, ownFieldMethodCount
 }
 
 // isConventionMethod reports whether m matches one of Go's error-handling

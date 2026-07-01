@@ -170,7 +170,10 @@ func TestNewEngine_RejectsUnknownMetric(t *testing.T) {
 // penalty, and a cohesive type (LSCC >= 0.6) takes no cohesion penalty.
 func TestDefaultEngine_LSCCCohesionBands(t *testing.T) {
 	base := func(lscc float64) Metrics {
-		return Metrics{"method_count": 6, "cohesion_method_count": 6, "has_fields": 1, "lscc": lscc}
+		return Metrics{
+			"method_count": 6, "cohesion_method_count": 6, "has_fields": 1,
+			"own_field_access_method_count": 6, "lscc": lscc,
+		}
 	}
 	// As cohesion (LSCC) rises, the penalty shrinks, so the SRP score must
 	// strictly increase across ascending LSCC values.

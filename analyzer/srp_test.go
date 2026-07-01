@@ -113,3 +113,29 @@ func TestSRPAnalyzer_StatelessConventionMethod(t *testing.T) {
 	}
 	t.Error("ParseError not found in results")
 }
+
+// TestSRPAnalyzer_NoOwnFieldAccessNotPenalized verifies that a struct whose
+// methods read none of its own fields (pure calculators over their parameters)
+// is not hit by a false low-cohesion penalty. LSCC is undefined there (no field
+// can be shared), so the cohesion rule's own_field_access_method_count >= 2
+// guard skips it and the type keeps a perfect SRP score.
+func TestSRPAnalyzer_NoOwnFieldAccessNotPenalized(t *testing.T) {
+	pkgs, err := parser.Parse([]string{"../testdata/srp"})
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+
+	a := analyzer.NewSRPAnalyzer()
+	results := a.Analyze(pkgs[0])
+
+	for _, r := range results {
+		if r.TargetName == "MathKit" {
+			if r.Score != 100 {
+				t.Errorf("MathKit SRP score %.1f should be 100 "+
+					"(methods read no own field; cohesion is not applicable, not low)", r.Score)
+			}
+			return
+		}
+	}
+	t.Error("MathKit not found in results")
+}

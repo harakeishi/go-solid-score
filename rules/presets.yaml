@@ -70,7 +70,7 @@ rules:
   - id: srp-cohesion
     principle: SRP
     metric: lscc
-    where: ["cohesion_method_count >= 2", "has_fields == 1"]
+    where: ["cohesion_method_count >= 2", "has_fields == 1", "own_field_access_method_count >= 2"]
     bands:
       - { when: "< 0.2", value: 40, message: "very low cohesion (LSCC=%v)" }
       - { when: "< 0.4", value: 25, message: "low cohesion (LSCC=%v)" }
