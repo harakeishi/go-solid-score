@@ -22,22 +22,27 @@ func StructMetrics(s *model.StructInfo, pkg *model.PackageInfo, whitelist []stri
 	m["public_method_count"] = float64(len(pubMethods))
 
 	// Fields (named, non-embedded). has_fields drives the SRP stateless guard.
+	// ownFields is the set of own named-field names; LSCC counts accesses only
+	// to these so external/promoted field reads cannot inflate cohesion.
 	namedFields := 0
+	ownFields := make(map[string]bool)
 	for _, f := range s.Fields {
 		if f.Name != "" {
 			namedFields++
+			ownFields[f.Name] = true
 		}
 	}
 	m["field_count"] = float64(namedFields)
 	m["has_fields"] = boolMetric(namedFields > 0)
 
-	// --- SRP: LCOM4 cohesion, size, complexity ---
-	cohesionPenalty, lcom4 := srpCohesion(methods)
-	m["lcom4"] = float64(lcom4)
-	m["srp_cohesion_penalty"] = cohesionPenalty
-	if lcom4 > 0 {
-		m["srp_avg_component_size"] = float64(len(methods)) / float64(lcom4)
-	}
+	// --- SRP: LSCC cohesion, complexity ---
+	// cohesion_method_count is the method count after excluding Go convention
+	// methods (errors.Is/As/Unwrap); LSCC is only meaningful when it is >= 2, so
+	// the cohesion rule guards on it rather than on raw method_count.
+	lscc, ownFieldMethodCount := calculateLSCC(methods, ownFields)
+	m["lscc"] = lscc
+	m["own_field_access_method_count"] = float64(ownFieldMethodCount)
+	m["cohesion_method_count"] = float64(len(effectiveCohesionMethods(methods)))
 	totalComplexity := 0
 	for _, mth := range methods {
 		totalComplexity += mth.CyclomaticComplexity
@@ -107,29 +112,6 @@ func InterfaceMetrics(iface *model.InterfaceInfo) rules.Metrics {
 		"direct_methods": float64(len(iface.Methods)),
 		"embed_count":    float64(len(iface.Embeds)),
 	}
-}
-
-// srpCohesion computes the SRP cohesion penalty and LCOM4 for a method set,
-// reproducing the size-graduated attenuation of the original SRP analyzer: the
-// base LCOM4 penalty is attenuated toward 25% as the average component size
-// grows from 3 to >=10 methods, so a large structured aggregate is not
-// penalized like a small fragmented type. Returns (0, lcom4) when LCOM4 < 2.
-func srpCohesion(methods []*model.MethodInfo) (penalty float64, lcom4 int) {
-	lcom4 = calculateLCOM4(methods)
-	if lcom4 < 2 {
-		return 0, lcom4
-	}
-	base := baseLCOM4Penalty(lcom4)
-	avgComp := float64(len(methods)) / float64(lcom4)
-	const loSize, hiSize, minAtten = 3.0, 10.0, 0.25
-	atten := 1.0
-	switch {
-	case avgComp >= hiSize:
-		atten = minAtten
-	case avgComp > loSize:
-		atten = 1.0 - (avgComp-loSize)/(hiSize-loSize)*(1.0-minAtten)
-	}
-	return base * atten, lcom4
 }
 
 // embedMissingOverrides counts methods of embedded in-package interfaces that
@@ -249,7 +231,7 @@ func boolMetric(b bool) float64 {
 var metricNames = []string{
 	// struct metrics
 	"method_count", "public_method_count", "field_count", "has_fields",
-	"lcom4", "srp_cohesion_penalty", "srp_avg_component_size", "total_complexity",
+	"lscc", "cohesion_method_count", "own_field_access_method_count", "total_complexity",
 	"type_switch_count", "type_assert_count", "reflect_count", "total_stmts",
 	"type_check_density", "iface_param_count",
 	"implements_interface", "unconditional_panic_count", "noop_count",

@@ -8,7 +8,7 @@ A static analysis tool that scores Go source code against the five SOLID design 
 
 ## Features
 
-- **SRP** (Single Responsibility Principle) — LCOM4-based cohesion analysis
+- **SRP** (Single Responsibility Principle) — LSCC-based cohesion analysis
 - **OCP** (Open/Closed Principle) — Detects type switches, type assertions, and reflect usage
 - **LSP** (Liskov Substitution Principle) — Detects panics, no-ops, and interface contract violations
 - **ISP** (Interface Segregation Principle) — Evaluates interface sizes following Go idioms
@@ -183,14 +183,15 @@ disable_rules:
 # `id` + `cap`) is rejected with an error rather than silently dropping the
 # preset, and a misspelled `metric` is rejected too.
 rules:
-  # Soften the SRP cohesion penalty to half strength.
+  # Soften the SRP cohesion penalty to half strength (halve each band value).
   - id: srp-cohesion          # matches a preset id -> replaces it in place
     principle: SRP
-    metric: srp_cohesion_penalty
-    when: "> 0"
-    effect: penalty
-    from_metric: true         # amount = metric value × scale
-    scale: 0.5
+    metric: lscc              # LSCC cohesion in [0,1]; lower = worse
+    where: ["cohesion_method_count >= 2", "has_fields == 1"]
+    bands:                    # first matching band applies
+      - { when: "< 0.2", value: 20, message: "very low cohesion (LSCC=%v)" }
+      - { when: "< 0.4", value: 12, message: "low cohesion (LSCC=%v)" }
+      - { when: "< 0.6", value: 5,  message: "moderate cohesion (LSCC=%v)" }
 
   # A brand-new rule: penalize any struct with more than 6 methods.
   - id: custom-too-many-methods
@@ -228,7 +229,7 @@ rule_defaults:
 ### Available metrics
 
 Structs expose: `method_count`, `public_method_count`, `field_count`,
-`has_fields`, `lcom4`, `srp_cohesion_penalty`, `srp_avg_component_size`,
+`has_fields`, `lscc`, `cohesion_method_count`,
 `total_complexity`, `type_switch_count`, `type_assert_count`, `reflect_count`,
 `total_stmts`, `type_check_density`, `iface_param_count`,
 `implements_interface`, `unconditional_panic_count`, `noop_count`,
@@ -253,35 +254,31 @@ reflect the preset values.
 <details>
 <summary>SRP — Single Responsibility Principle</summary>
 
-Uses **LCOM4** (Lack of Cohesion of Methods) to measure struct cohesion.
+Uses **LSCC** (Low-level Similarity-based Class Cohesion, Al Dallal & Briand
+2012) to measure struct cohesion. LSCC is a normalized ratio in `[0, 1]` where
+**1 is maximally cohesive** — for each named field accessed by `x` methods it
+sums `x·(x−1)` and normalizes by `k·l·(l−1)` (`l` methods, `k` named fields).
+Unlike a component-count metric, a single stateless method *dilutes* the score
+rather than fragmenting it, which makes the signal robust across struct sizes.
 
-- Builds a graph where two methods are connected if they share a field or call each other
-- Counts connected components via BFS — more components = more responsibilities
-- A method that accesses **no** receiver field and is uncoupled from siblings (e.g. an `errors.Is`/`As` convention method, or a stateless adapter method) is excluded from the count: LCOM measures cohesion *over fields*, so a stateless method neither adds nor removes a data responsibility. Oversized types are still flagged by the method-count penalty below.
+- The `errors.Is`/`As`/`Unwrap` convention methods are excluded from the method
+  set: they are framework-protocol methods that inspect their argument rather
+  than the receiver's fields, so counting them would artificially deflate
+  cohesion. The count of remaining methods is exposed as `cohesion_method_count`.
+- The cohesion penalty only applies to structs with fields and at least two
+  cohesion methods (`has_fields == 1`, `cohesion_method_count >= 2`); below that
+  LSCC is undefined and no false positive is emitted.
 
-| LCOM4 | Base penalty |
-|-------|--------------|
-| ≤ 1   | None         |
-| 2     | −40          |
-| 3     | −55          |
-| 4     | −70          |
-| ≥ 5   | −70 (capped) |
+| LSCC        | Penalty |
+|-------------|---------|
+| ≥ 0.6       | None    |
+| 0.4 – < 0.6 | −10     |
+| 0.2 – < 0.4 | −25     |
+| < 0.2       | −45     |
 
-The base penalty ramps `40 + 15×(LCOM4−2)` (capped at −70) so that more
-disconnected groups read as progressively worse rather than stepping straight to
-the maximum at three. The cohesion penalty is then **graduated by average
-component size** (methods ÷
-LCOM4). LCOM4 counts how many disconnected method groups a struct splits into,
-but the same count means very different things at different sizes: two groups
-among 3 methods is genuine fragmentation (most methods are islands), whereas two
-groups among 70 methods is a large aggregate whose methods cluster into a couple
-of cohesive areas — the facade pattern (`cobra.Command`, `gin.Engine`,
-`fasthttp.Request`, `logrus.Logger`). Because the classic SRP smell is *many
-small* disconnected pieces, the base penalty is attenuated toward 25% as the
-average group grows from 3 to ≥10 methods, and confidence is lowered to mark the
-weaker signal. Small fragmented types take the full penalty; large structured
-aggregates are still kept below the SRP threshold by the method-count and
-complexity penalties below, but are no longer floored.
+The thresholds live in [`rules/presets.yaml`](rules/presets.yaml) (the
+`srp-cohesion` rule) rather than in code, so they can be retuned per repo
+without a rebuild.
 
 Additional penalties: cyclomatic complexity > 20 (−10) or > 40 (−20), method count > 10 (−5) or > 15 (−15).
 

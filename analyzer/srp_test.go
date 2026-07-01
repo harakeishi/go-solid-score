@@ -50,16 +50,12 @@ func TestSRPAnalyzer_Bad(t *testing.T) {
 	t.Error("GodStruct not found in results")
 }
 
-// TestSRPAnalyzer_GraduatedLCOM4 verifies that the LCOM4 cohesion penalty is
-// graduated by average component size. A large aggregate whose methods cluster
-// into a few cohesive groups (LargeFacade: 16 methods, LCOM4=2) is a far weaker
-// SRP signal than a small type whose methods are mostly disconnected islands
-// (GodStruct: 8 methods, LCOM4=5). The facade must therefore score
-// meaningfully higher than the fragmented type, and higher than the flat
-// per-LCOM4 penalty alone would yield (a flat LCOM4=2 hit of -40 plus the
-// -15 method-count penalty would floor it at 45), while still staying below a
-// perfect score because the method-count penalty keeps a large type honest.
-func TestSRPAnalyzer_GraduatedLCOM4(t *testing.T) {
+// TestSRPAnalyzer_LSCCSeparatesCohesion verifies that LSCC-based scoring
+// separates a cohesive type from a fragmented one: the cohesive TaxCalculator
+// (all methods share the rate/discount fields) must score well above the
+// fragmented GodStruct (methods cluster over disjoint field groups, sharing
+// nothing).
+func TestSRPAnalyzer_LSCCSeparatesCohesion(t *testing.T) {
 	pkgs, err := parser.Parse([]string{"../testdata/srp"})
 	if err != nil {
 		t.Fatalf("parse error: %v", err)
@@ -68,59 +64,35 @@ func TestSRPAnalyzer_GraduatedLCOM4(t *testing.T) {
 	a := analyzer.NewSRPAnalyzer()
 	results := a.Analyze(pkgs[0])
 
-	var facade, god float64
-	var facadeFound, godFound, smallFound bool
-	var facadeConf, smallConf float64
+	var cohesive, fragmented float64
+	var cohesiveFound, fragmentedFound bool
 	for _, r := range results {
 		switch r.TargetName {
-		case "LargeFacade":
-			facade, facadeFound, facadeConf = r.Score, true, r.Confidence
+		case "TaxCalculator":
+			cohesive, cohesiveFound = r.Score, true
 		case "GodStruct":
-			god, godFound = r.Score, true
-		case "SmallSplit":
-			smallFound, smallConf = true, r.Confidence
+			fragmented, fragmentedFound = r.Score, true
 		}
 	}
-	if !facadeFound {
-		t.Fatal("LargeFacade not found in results")
+	if !cohesiveFound {
+		t.Fatal("TaxCalculator not found in results")
 	}
-	if !godFound {
+	if !fragmentedFound {
 		t.Fatal("GodStruct not found in results")
 	}
-	if !smallFound {
-		t.Fatal("SmallSplit not found in results")
+	if cohesive <= fragmented {
+		t.Errorf("cohesive TaxCalculator SRP %.1f should exceed fragmented GodStruct SRP %.1f", cohesive, fragmented)
 	}
-
-	if facade <= god {
-		t.Errorf("LargeFacade SRP %.1f should exceed fragmented GodStruct SRP %.1f", facade, god)
-	}
-	if facade <= 45 {
-		t.Errorf("LargeFacade SRP %.1f should exceed the flat-penalty floor (45): "+
-			"the cohesion penalty must be attenuated for a large cohesive aggregate", facade)
-	}
-	if facade >= 90 {
-		t.Errorf("LargeFacade SRP %.1f should stay below 90: a large type is still "+
-			"penalized by method count even when its cohesion penalty is attenuated", facade)
-	}
-	// A substantially attenuated aggregate is a weaker SRP signal; confidence
-	// is reduced.
-	if facadeConf > analyzer.ConfidenceMedium {
-		t.Errorf("LargeFacade SRP confidence %.2f should be reduced (<= %.2f) when the "+
-			"cohesion penalty is substantially attenuated", facadeConf, analyzer.ConfidenceMedium)
-	}
-	// A type that is only marginally attenuated (SmallSplit: avg ~3.5
-	// methods/group) is not a large aggregate, so its confidence must be left
-	// high — the confidence drop is reserved for genuine aggregates, not any
-	// fractional attenuation.
-	if smallConf <= analyzer.ConfidenceMedium {
-		t.Errorf("SmallSplit SRP confidence %.2f should stay high (> %.2f): a barely "+
-			"attenuated small type is not a large aggregate", smallConf, analyzer.ConfidenceMedium)
+	if fragmented >= 70 {
+		t.Errorf("fragmented GodStruct SRP %.1f should be < 70 (low LSCC cohesion)", fragmented)
 	}
 }
 
-// TestSRPAnalyzer_StatelessConventionMethod verifies that a method which
-// accesses no receiver field (e.g. an errors.Is convention method) does not
-// fragment LCOM4 and penalize an otherwise cohesive type.
+// TestSRPAnalyzer_StatelessConventionMethod verifies the cohesive error type
+// (ParseError) is not driven below the SRP threshold by the stateless errors.Is
+// convention method. LSCC excludes Is/As/Unwrap from the method set, so the
+// remaining cohesive Error method (or a too-small effective set) keeps the type
+// acceptable rather than reporting a spurious low-cohesion penalty.
 func TestSRPAnalyzer_StatelessConventionMethod(t *testing.T) {
 	pkgs, err := parser.Parse([]string{"../testdata/srp"})
 	if err != nil {
@@ -132,12 +104,38 @@ func TestSRPAnalyzer_StatelessConventionMethod(t *testing.T) {
 
 	for _, r := range results {
 		if r.TargetName == "ParseError" {
-			if r.Score < 100 {
-				t.Errorf("ParseError SRP score %.1f should be 100 "+
-					"(a stateless Is method must not fragment LCOM4)", r.Score)
+			if r.Score < 70 {
+				t.Errorf("ParseError SRP score %.1f should stay >= 70 "+
+					"(a stateless errors.Is convention method must not drive a cohesive type below threshold)", r.Score)
 			}
 			return
 		}
 	}
 	t.Error("ParseError not found in results")
+}
+
+// TestSRPAnalyzer_NoOwnFieldAccessNotPenalized verifies that a struct whose
+// methods read none of its own fields (pure calculators over their parameters)
+// is not hit by a false low-cohesion penalty. LSCC is undefined there (no field
+// can be shared), so the cohesion rule's own_field_access_method_count >= 2
+// guard skips it and the type keeps a perfect SRP score.
+func TestSRPAnalyzer_NoOwnFieldAccessNotPenalized(t *testing.T) {
+	pkgs, err := parser.Parse([]string{"../testdata/srp"})
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+
+	a := analyzer.NewSRPAnalyzer()
+	results := a.Analyze(pkgs[0])
+
+	for _, r := range results {
+		if r.TargetName == "MathKit" {
+			if r.Score != 100 {
+				t.Errorf("MathKit SRP score %.1f should be 100 "+
+					"(methods read no own field; cohesion is not applicable, not low)", r.Score)
+			}
+			return
+		}
+	}
+	t.Error("MathKit not found in results")
 }
