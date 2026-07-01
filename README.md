@@ -274,7 +274,7 @@ rather than fragmenting it, which makes the signal robust across struct sizes.
 | ≥ 0.6       | None    |
 | 0.4 – < 0.6 | −10     |
 | 0.2 – < 0.4 | −25     |
-| < 0.2       | −40     |
+| < 0.2       | −45     |
 
 The thresholds live in [`rules/presets.yaml`](rules/presets.yaml) (the
 `srp-cohesion` rule) rather than in code, so they can be retuned per repo
