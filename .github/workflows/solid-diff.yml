@@ -11,11 +11,11 @@ jobs:
   diff:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version-file: go.mod
 
@@ -42,12 +42,29 @@ jobs:
           "$RUNNER_TEMP/gss" diff --base base.json ./...  # human-readable log
 
       # Same-repo PRs have a write token: post (and update) a sticky comment.
+      # Uses the official actions/github-script (bundled on every runner) rather
+      # than a third-party action. The markdown body already starts with the
+      # "<!-- go-solid-score-diff -->" marker, which we match to update the
+      # previous comment instead of posting a new one.
       - name: Comment on PR
         if: github.event.pull_request.head.repo.full_name == github.repository
-        uses: marocchino/sticky-pull-request-comment@v2
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
         with:
-          header: go-solid-score-diff
-          path: comment.md
+          script: |
+            const fs = require('fs');
+            const marker = '<!-- go-solid-score-diff -->';
+            const body = fs.readFileSync('comment.md', 'utf8');
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number,
+            });
+            const existing = comments.find((c) => c.body && c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }
 
       # Fork PRs run with a read-only token, so commenting would 403. Fall back
       # to the job summary, which is always writable. (Do NOT switch to

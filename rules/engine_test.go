@@ -165,26 +165,31 @@ func TestNewEngine_RejectsUnknownMetric(t *testing.T) {
 	}
 }
 
-// TestDefaultEngine_CohesionConfidenceBoundary pins the only behavior that the
-// declarative rewrite could subtly shift: the average-component-size threshold
-// at which SRP confidence is reduced. The exact boundary (23 methods over
-// LCOM4=3 -> avg 7.6666...) must reduce confidence, matching the original
-// atten<=0.5 condition.
-func TestDefaultEngine_CohesionConfidenceBoundary(t *testing.T) {
-	e := DefaultEngine()
-	boundary := Metrics{
-		"method_count": 23, "has_fields": 1, "lcom4": 3,
-		"srp_avg_component_size": 23.0 / 3.0, "srp_cohesion_penalty": 10,
+// TestDefaultEngine_LSCCCohesionBands verifies the SRP cohesion penalty is now
+// driven by the LSCC metric via banded thresholds: lower cohesion -> larger
+// penalty, and a cohesive type (LSCC >= 0.6) takes no cohesion penalty.
+func TestDefaultEngine_LSCCCohesionBands(t *testing.T) {
+	base := func(lscc float64) Metrics {
+		return Metrics{
+			"method_count": 6, "cohesion_method_count": 6, "has_fields": 1,
+			"own_field_access_method_count": 6, "lscc": lscc,
+		}
 	}
-	if got := e.Evaluate("SRP", false, boundary).Confidence; got != 0.7 {
-		t.Errorf("boundary avg 23/3: confidence = %v, want 0.7 (reduced)", got)
+	// As cohesion (LSCC) rises, the penalty shrinks, so the SRP score must
+	// strictly increase across ascending LSCC values.
+	var prev float64 = -1
+	for _, lscc := range []float64{0.1, 0.3, 0.5} {
+		score := DefaultEngine().Evaluate("SRP", false, base(lscc)).Score
+		if score <= prev {
+			t.Errorf("lscc=%.1f score %.1f should be higher than lower-cohesion case %.1f", lscc, score, prev)
+		}
+		prev = score
 	}
-
-	below := Metrics{
-		"method_count": 38, "has_fields": 1, "lcom4": 5,
-		"srp_avg_component_size": 38.0 / 5.0, "srp_cohesion_penalty": 10, // avg 7.6
-	}
-	if got := e.Evaluate("SRP", false, below).Confidence; got != 1.0 {
-		t.Errorf("avg 7.6 (below boundary): confidence = %v, want 1.0 (unreduced)", got)
+	// A cohesive type takes no cohesion penalty (only any non-cohesion SRP
+	// rules apply); score must exceed the moderate-band case.
+	cohesive := DefaultEngine().Evaluate("SRP", false, base(0.8)).Score
+	moderate := DefaultEngine().Evaluate("SRP", false, base(0.5)).Score
+	if cohesive <= moderate {
+		t.Errorf("cohesive (LSCC=0.8) score %.1f should exceed moderate (LSCC=0.5) %.1f", cohesive, moderate)
 	}
 }

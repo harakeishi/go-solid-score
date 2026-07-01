@@ -41,3 +41,23 @@ func (e ParseError) Is(target error) bool {
 	_, ok := target.(ParseError)
 	return ok
 }
+
+// MathKit has a configuration field but its methods are pure calculators that
+// operate only on their parameters — none read the receiver's own fields. LSCC
+// is therefore undefined (no field can be shared), NOT low: the type has a
+// single cohesive responsibility. The cohesion rule must not fire a false
+// low-cohesion penalty just because own-field access is zero.
+// solid:want SRP=ok reason="pure calculator methods share no field because they read none; cohesion is not applicable, not low"
+type MathKit struct {
+	precision int
+}
+
+func NewMathKit(precision int) *MathKit {
+	return &MathKit{precision: precision}
+}
+
+func (m *MathKit) Add(a, b int) int { return a + b }
+
+func (m *MathKit) Mul(a, b int) int { return a * b }
+
+func (m *MathKit) Sub(a, b int) int { return a - b }

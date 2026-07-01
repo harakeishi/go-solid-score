@@ -64,26 +64,17 @@ rules:
     effect: none
     confidence: 1.0
 
+  # Cohesion measured via LSCC (Al Dallal & Briand 2012): a normalized [0,1]
+  # score where 1 is maximally cohesive. Lower cohesion yields a larger penalty.
+  # Thresholds live here (not in code) so they can be tuned per repo.
   - id: srp-cohesion
     principle: SRP
-    metric: srp_cohesion_penalty
-    when: "> 0"
-    effect: penalty
-    from_metric: true
-    message: "low cohesion (LCOM4): -%v penalty"
-
-  # A heavily attenuated cohesion penalty marks a large structured aggregate
-  # rather than a fragmented type, so its SRP signal is weaker and confidence is
-  # reduced. The threshold is the average component size at which the original
-  # attenuation reaches 0.5: avg >= 3 + 0.5*7/0.75 = 7.66666..., so an exact
-  # boundary case such as 23 methods over LCOM4=3 is included.
-  - id: srp-cohesion-confidence
-    principle: SRP
-    metric: srp_avg_component_size
-    where: ["lcom4 >= 2"]
-    when: ">= 7.66666"
-    effect: none
-    confidence: 0.7
+    metric: lscc
+    where: ["cohesion_method_count >= 2", "has_fields == 1", "own_field_access_method_count >= 2"]
+    bands:
+      - { when: "< 0.2", value: 45, message: "very low cohesion (LSCC=%v)" }
+      - { when: "< 0.4", value: 25, message: "low cohesion (LSCC=%v)" }
+      - { when: "< 0.6", value: 10, message: "moderate cohesion (LSCC=%v)" }
 
   - id: srp-complexity
     principle: SRP

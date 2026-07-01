@@ -19,8 +19,7 @@ func TestMetricNamesCoverEmitted(t *testing.T) {
 	}
 
 	// Exercise many branches (conditional metrics like iface_dep_ratio,
-	// type_check_density, public_lcom4, srp_avg_component_size) across the
-	// principle testdata packages.
+	// type_check_density, public_lcom4) across the principle testdata packages.
 	pkgs, err := parser.Parse([]string{
 		"../testdata/srp", "../testdata/ocp", "../testdata/lsp",
 		"../testdata/isp", "../testdata/dip",
