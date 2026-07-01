@@ -1,0 +1,16 @@
+# Repository ruleset の require_code_owner_review が有効なため、
+# サプライチェーン上重要なファイルにはオーナーのレビューを必須にする。
+# （CODEOWNERS が無いと当該ルールが空振りするため明示する）
+
+# デフォルトオーナー
+*                       @harakeishi
+
+# CI/CD・リリース・配布まわり（改ざんの影響が最も大きい）
+/.github/workflows/     @harakeishi
+/.github/dependabot.yml @harakeishi
+/action.yml             @harakeishi
+/.goreleaser.yaml       @harakeishi
+
+# 依存定義
+/go.mod                 @harakeishi
+/go.sum                 @harakeishi
