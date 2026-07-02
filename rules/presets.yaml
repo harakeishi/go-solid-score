@@ -72,9 +72,9 @@ rules:
     metric: lscc
     where: ["cohesion_method_count >= 2", "has_fields == 1", "own_field_access_method_count >= 2"]
     bands:
-      - { when: "< 0.2", value: 45, message: "very low cohesion (LSCC=%.2f)" }
-      - { when: "< 0.4", value: 25, message: "low cohesion (LSCC=%.2f)" }
-      - { when: "< 0.6", value: 10, message: "moderate cohesion (LSCC=%.2f)" }
+      - { when: "< 0.2", value: 45, message: "very low cohesion (LSCC=%v)" }
+      - { when: "< 0.4", value: 25, message: "low cohesion (LSCC=%v)" }
+      - { when: "< 0.6", value: 10, message: "moderate cohesion (LSCC=%v)" }
 
   - id: srp-complexity
     principle: SRP

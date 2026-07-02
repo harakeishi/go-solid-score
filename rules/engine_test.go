@@ -193,3 +193,41 @@ func TestDefaultEngine_LSCCCohesionBands(t *testing.T) {
 		t.Errorf("cohesive (LSCC=0.8) score %.1f should exceed moderate (LSCC=0.5) %.1f", cohesive, moderate)
 	}
 }
+
+// TestAddDetail_RoundsMetricValue verifies detail lines round the metric to
+// two decimals: ratio metrics must not leak full float precision
+// (LSCC=0.03333333333333333), while whole numbers still render bare.
+func TestAddDetail_RoundsMetricValue(t *testing.T) {
+	cases := []struct {
+		message string
+		val     float64
+		want    string
+	}{
+		{"very low cohesion (LSCC=%v)", 1.0 / 30, "very low cohesion (LSCC=0.03)"},
+		{"high type-check density (%v)", 1.0 / 3, "high type-check density (0.33)"},
+		{"too many methods (%v)", 16, "too many methods (16)"},
+	}
+	for _, c := range cases {
+		var out Outcome
+		addDetail(&out, c.message, c.val)
+		if len(out.Details) != 1 || out.Details[0] != c.want {
+			t.Errorf("addDetail(%q, %v) = %v, want [%q]", c.message, c.val, out.Details, c.want)
+		}
+	}
+}
+
+// TestAddDetail_LiteralPercentKeptVerbatim verifies a message whose "%" is not
+// a usable format verb (a literal percent in a custom rule) is appended as
+// written instead of being mangled with fmt's %! error markers.
+func TestAddDetail_LiteralPercentKeptVerbatim(t *testing.T) {
+	for _, message := range []string{
+		"over 50% of methods are unrelated",
+		"100% concrete dependencies",
+	} {
+		var out Outcome
+		addDetail(&out, message, 0.3)
+		if len(out.Details) != 1 || out.Details[0] != message {
+			t.Errorf("addDetail(%q) = %v, want the message verbatim", message, out.Details)
+		}
+	}
+}
