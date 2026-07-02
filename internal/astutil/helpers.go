@@ -144,6 +144,12 @@ func IsFuncType(t types.Type) bool {
 //     map[string]Event, [3]Record. These are overwhelmingly data records the
 //     struct stores (an in-memory store/cache/registry/buffer), not collaborators
 //     it invokes, so penalizing them produced a systematic DIP false positive.
+//   - A *bare value struct with no methods* — a non-pointer struct field (e.g. a
+//     nested config block `DIP DIPConfig`) whose method set is empty. With no
+//     methods there is no behavior to call, so it cannot be a collaborator; it
+//     is a data record stored inline. A method-bearing value struct stays a
+//     concrete dependency: behavior can be invoked on it even when held by
+//     value.
 //
 // Crucially, a *pointer collection* of a struct (e.g. []*PaymentService,
 // map[string]*Conn, []*Worker) is NOT a value type: collaborators are
@@ -161,10 +167,24 @@ func IsValueType(t types.Type) bool {
 	}) {
 		return true
 	}
+	if isMethodlessStructValue(t) {
+		return true
+	}
 	// Otherwise: a value-element collection of a non-basic type is a data
 	// container; a pointer-element collection (or a bare pointer) is a
 	// collaborator and is NOT a value type.
 	return isValueElementCollection(t)
+}
+
+// isMethodlessStructValue reports whether t is a bare (non-pointer,
+// non-collection) struct value whose method set is empty — pure stored data.
+// The method set is taken through a pointer so pointer-receiver methods also
+// count as behavior.
+func isMethodlessStructValue(t types.Type) bool {
+	if _, ok := t.Underlying().(*types.Struct); !ok {
+		return false
+	}
+	return types.NewMethodSet(types.NewPointer(t)).Len() == 0
 }
 
 // isValueElementCollection reports whether t is a slice, array, map, or channel

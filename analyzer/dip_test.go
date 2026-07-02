@@ -165,6 +165,53 @@ func TestDIPAnalyzer_ConcreteCollection(t *testing.T) {
 	t.Error("Pipeline not found in results")
 }
 
+// TestDIPAnalyzer_DataModelNotApplicable guards against the systematic false
+// positive where a behavior-less data record aggregate (an AST-model struct
+// holding []*Param, a DTO, a report struct) scored a confident DIP=0 purely
+// for the types of the data it stores. Such targets have no collaborators to
+// invert, so DIP must report "not applicable" (top score, low confidence) —
+// while behavioral owners of the same field shapes (CollaboratorOwner,
+// Pipeline) must remain flagged.
+func TestDIPAnalyzer_DataModelNotApplicable(t *testing.T) {
+	pkgs, err := parser.Parse([]string{"../testdata/dip"})
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+
+	a := analyzer.NewDIPAnalyzer(nil)
+	results := a.Analyze(pkgs[0])
+
+	got := make(map[string]analyzer.Result)
+	for _, r := range results {
+		got[r.TargetName] = r
+	}
+
+	for _, name := range []string{"Doc", "Tool"} {
+		r, ok := got[name]
+		if !ok {
+			t.Fatalf("%s not found in results", name)
+		}
+		if r.Score < 100 {
+			t.Errorf("%s DIP score %.1f should be 100 (behavior-less data type; DIP not applicable)", name, r.Score)
+		}
+		if r.Confidence > analyzer.ConfidenceLow {
+			t.Errorf("%s DIP confidence %.2f should be low (not-applicable verdict)", name, r.Confidence)
+		}
+	}
+
+	// Regression guards: behavioral owners of pointer collections must stay
+	// flagged — the data-type exemption must not absolve them.
+	for _, name := range []string{"CollaboratorOwner", "Pipeline"} {
+		r, ok := got[name]
+		if !ok {
+			t.Fatalf("%s not found in results", name)
+		}
+		if r.Score >= 60 {
+			t.Errorf("%s DIP score %.1f should stay < 60 (behavioral owner of a concrete pointer collection)", name, r.Score)
+		}
+	}
+}
+
 // TestDIPAnalyzer_NoOwnedDependencies verifies that a type whose only
 // non-value dependency arrives as a concrete method parameter (call-time data,
 // not an owned collaborator) is scored neutrally with low confidence: not

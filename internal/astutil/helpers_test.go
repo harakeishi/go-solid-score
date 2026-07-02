@@ -50,6 +50,8 @@ func fieldTypes(t *testing.T, src string) map[string]types.Type {
 func TestIsValueType(t *testing.T) {
 	src := `package p
 type Coll struct{ Name string }
+type Svc struct{ Name string }
+func (s *Svc) Do() {}
 type Iface interface{ M() }
 type S struct {
 	basic       int
@@ -62,7 +64,8 @@ type S struct {
 	ptrSlice    []*Coll           // pointer collection of a struct -> collaborator
 	ptrMap      map[string]*Coll  // pointer map of a struct -> collaborator
 	barePtr     *Coll             // bare pointer -> collaborator
-	bareStruct  Coll              // bare value struct -> collaborator (not a collection)
+	bareData    Coll              // bare value struct, no methods -> stored data
+	bareSvc     Svc               // bare value struct WITH methods -> collaborator
 	ifaceSlice  []Iface           // interface element -> abstraction, not data
 	deepVal     [][][][][][][][]Coll // deeply nested value-element collection -> still data
 	deepPtr     [][][][][][][][]*Coll // deeply nested pointer collection -> collaborator
@@ -83,7 +86,8 @@ type S struct {
 		{"ptrSlice", false},
 		{"ptrMap", false},
 		{"barePtr", false},
-		{"bareStruct", false},
+		{"bareData", true},
+		{"bareSvc", false},
 		{"ifaceSlice", false},
 		{"deepVal", true},
 		{"deepPtr", false},

@@ -366,6 +366,21 @@ rules:
     stop: true
     message: "only call-time (method-parameter) dependencies; DIP weakly applicable"
 
+  # A behavior-less data record (only convention/accessor methods, no
+  # embedding) has no collaborators to invert: the structs it aggregates are
+  # stored data, not services it calls into. Scoring it on its field types
+  # systematically flagged idiomatic data models (AST nodes, DTOs, report
+  # structs) as total DIP violations. Placed after the call-time rules so a
+  # call-time-only type keeps its neutral "weakly applicable" outcome.
+  - id: dip-data-type
+    principle: DIP
+    metric: is_data_type
+    when: "== 1"
+    effect: none
+    confidence: 0.3
+    stop: true
+    message: "behavior-less data type; DIP not applicable"
+
   - id: dip-ratio
     principle: DIP
     metric: iface_dep_ratio

@@ -217,6 +217,7 @@ func dipMetrics(s *model.StructInfo, pkg *model.PackageInfo, whitelist []string,
 		m["iface_dep_ratio"] = dw.iface / dw.total
 	}
 	m["has_constructor_injection"] = boolMetric(constructor != nil && hasIfaceParams(constructor.Params))
+	m["is_data_type"] = boolMetric(isDataType(s))
 }
 
 // boolMetric encodes a boolean fact as the 0/1 the rule engine compares against.
@@ -242,7 +243,7 @@ var metricNames = []string{
 	"embed_missing_override_count",
 	"is_decorator", "public_lcom4", "isp_large_iface_penalty", "isp_composition_bonus",
 	"weighted_dep_total", "weighted_dep_iface", "structural_dep_total",
-	"iface_dep_ratio", "has_constructor_injection",
+	"iface_dep_ratio", "has_constructor_injection", "is_data_type",
 	// interface metrics
 	"total_methods", "direct_methods", "embed_count",
 }

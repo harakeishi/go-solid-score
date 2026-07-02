@@ -380,12 +380,18 @@ Only *owned collaborators* count toward the ratio. The following are **not**
 treated as dependencies, because penalizing them produced false positives on
 idiomatic aggregate/config types: standard-library and user-whitelisted types
 (including collections of them), function-typed fields (callbacks/strategies),
-pure-data value types — those whose element is a builtin basic type, such as
-`map[string]string` or a named alias like `type FieldMap …` — and
-self-references (recursive/tree structures). A collection of a concrete struct
-(e.g. `[]*Worker`) *does* count as a concrete dependency. A type that owns no
-structural dependency at all is reported as *DIP not applicable* (top score,
-low confidence) rather than penalized via its method parameters. See
+pure-data value types — those whose element is a builtin basic type (such as
+`map[string]string` or a named alias like `type FieldMap …`), a value-element
+collection of a struct (`[]Message`), or a bare method-less value struct such
+as a nested config block — and self-references (recursive/tree structures). A
+collection of a concrete struct (e.g. `[]*Worker`) *does* count as a concrete
+dependency. A type that owns no structural dependency at all is reported as
+*DIP not applicable* (top score, low confidence) rather than penalized via its
+method parameters. The same *not applicable* verdict applies to behavior-less
+data types — DTOs, AST/data-model aggregates, report structs, i.e. types whose
+methods are all pure accessors or `String()`-style convention methods: the
+records they aggregate, even held by pointer, are stored data rather than
+collaborators to invert. See
 [`docs/scoring-analysis.md`](docs/scoring-analysis.md) for the benchmarking that
 motivated these rules.
 
