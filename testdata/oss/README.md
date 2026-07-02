@@ -49,9 +49,20 @@ labels are for).
 ## Version pinning
 
 Labels reference types as they exist at the versions pinned in
-`corpus/go.mod`. Bumping a pin can invalidate labels (a type gets renamed,
-refactored, or fixed); the gate defends this — a label whose ID no longer
-matches any scored target silently leaves the join, which shrinks the recall
-denominator or drops a TN/FP, and `CompareToBaseline` fails on the shrink.
-After an intended bump, re-review the affected labels, then regenerate with
+`corpus/go.mod` (which is also where `scripts/benchmark.sh` reads its clone
+refs from, so the two harnesses always measure the same code). Bumping a pin
+can invalidate labels — a type gets renamed, refactored, or fixed. The gate
+defends this at two layers:
+
+- `gss evaluate` **errors out** when an external label's ID matches no
+  analyzed target, so a vanished type fails the run immediately — including
+  `ok`-labelled types, whose TN/FP rows would otherwise leave the confusion
+  matrix silently (`CompareToBaseline` never compares TN, and a vanished FP
+  row would leave the baseline's FP count as a high-water mark masking the
+  next new false positive).
+- For labels that still join, `CompareToBaseline` fails on a TP drop, a
+  shrunken recall denominator, or a new FP.
+
+After an intended bump, re-review the affected labels (edit or delete them
+with reasoning in the PR), then regenerate with
 `scripts/evaluate-oss.sh --update`.

@@ -7,7 +7,9 @@
 # repo's per-principle confusion matrix against its committed baseline in
 # testdata/oss/baselines/. It fails (exit 1) when a repo regresses: a known
 # real-world violation is no longer caught (recall floor / vanished label) or a
-# sound real-world type is newly flagged (a new false positive).
+# sound real-world type is newly flagged (a new false positive). A label whose
+# ID no longer matches any analyzed target (corpus drift after a version bump)
+# is a hard error from `gss evaluate` itself.
 #
 # This is the measured evolution of scripts/benchmark.sh: benchmark.sh eyeballs
 # mean scores under the assumption "good libraries score well"; here that
@@ -26,15 +28,19 @@
 #   scripts/evaluate-oss.sh --update        # regenerate all baselines (after an
 #                                           # intended change; review the diff)
 #   scripts/evaluate-oss.sh --update logrus # regenerate a subset
+#   WORKDIR=/tmp/mydir scripts/evaluate-oss.sh
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CORPUS_DIR="$REPO_ROOT/testdata/oss/corpus"
 LABELS_DIR="$REPO_ROOT/testdata/oss/labels"
 BASELINE_DIR="$REPO_ROOT/testdata/oss/baselines"
+WORKDIR="${WORKDIR:-/tmp/gss-oss-eval}"
+BIN="$WORKDIR/gss"
 
 # repo name<TAB>package patterns (space-separated). The name keys the label and
-# baseline files; keep all three in sync.
+# baseline files. Versions live in testdata/oss/corpus/go.mod (the single
+# source of truth, also consumed by scripts/benchmark.sh).
 CORPUS=(
 	"cobra	github.com/spf13/cobra"
 	"logrus	github.com/sirupsen/logrus"
@@ -51,6 +57,14 @@ if [ "${1:-}" = "--update" ]; then
 fi
 ONLY=("$@")
 
+corpus_has() { # corpus_has <name>: is this a known repo name?
+	local entry
+	for entry in "${CORPUS[@]}"; do
+		[ "${entry%%	*}" = "$1" ] && return 0
+	done
+	return 1
+}
+
 want() { # want <name>: is this repo selected?
 	[ ${#ONLY[@]} -eq 0 ] && return 0
 	local n
@@ -60,7 +74,27 @@ want() { # want <name>: is this repo selected?
 	return 1
 }
 
-BIN="$(mktemp -d)/gss"
+# A selection typo (or a flag in the wrong position, e.g. `logrus --update`)
+# must not produce a zero-repo run that reports "no regressions" while having
+# gated nothing.
+for n in "${ONLY[@]}"; do
+	if ! corpus_has "$n"; then
+		echo "error: unknown repo \"$n\" (known: $(printf '%s\n' "${CORPUS[@]}" | cut -f1 | paste -sd' ' -))" >&2
+		exit 1
+	fi
+done
+
+# Every label file must be wired into CORPUS, or its repo would never be gated
+# while CI stays green.
+for f in "$LABELS_DIR"/*.yaml; do
+	name="$(basename "$f" .yaml)"
+	if ! corpus_has "$name"; then
+		echo "error: $f has no CORPUS entry in $0 — the repo would never be gated" >&2
+		exit 1
+	fi
+done
+
+mkdir -p "$WORKDIR"
 echo "building go-solid-score -> $BIN"
 (cd "$REPO_ROOT" && go build -o "$BIN" .)
 
@@ -79,18 +113,28 @@ for entry in "${CORPUS[@]}"; do
 
 	if [ "$UPDATE" -eq 1 ]; then
 		echo "== $name: regenerating baseline -> $baseline"
+		# Write to a temp file and move into place on success, so a failed
+		# evaluate (label typo, corpus drift) cannot truncate the committed
+		# baseline to zero bytes.
+		tmp="$(mktemp "$BASELINE_DIR/.$name.json.XXXXXX")"
 		# shellcheck disable=SC2086 # patterns is a deliberate word-split list
-		"$BIN" evaluate -f json --labels "$labels" $patterns >"$baseline"
+		if ! "$BIN" evaluate -f json --labels "$labels" $patterns >"$tmp"; then
+			rm -f "$tmp"
+			echo "!! $name: evaluate failed; baseline left untouched" >&2
+			exit 1
+		fi
+		mv "$tmp" "$baseline"
 		continue
 	fi
 
 	echo "== $name"
+	# One run does both jobs: the human-readable table goes to stdout, then the
+	# same report is checked against the baseline (regression details go to
+	# stderr, and a regression or evaluate error yields a non-zero exit).
 	# shellcheck disable=SC2086
-	"$BIN" evaluate --labels "$labels" $patterns
-	# shellcheck disable=SC2086
-	if ! "$BIN" evaluate -f json --labels "$labels" --baseline "$baseline" \
-		--fail-on-regression $patterns >/dev/null; then
-		echo "!! $name regressed against $(basename "$baseline")" >&2
+	if ! "$BIN" evaluate --labels "$labels" --baseline "$baseline" \
+		--fail-on-regression $patterns; then
+		echo "!! $name: evaluate failed or regressed against $(basename "$baseline")" >&2
 		fail=1
 	fi
 	echo

@@ -73,6 +73,13 @@ jobs:
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version-file: go.mod
+          # Include the corpus module's go.sum in the cache key: the default
+          # key hashes only the root go.sum, and that key is shared with (and
+          # saved first by) the lighter jobs, so the ~35 corpus modules would
+          # otherwise be re-downloaded from the proxy on every run.
+          cache-dependency-path: |
+            go.sum
+            testdata/oss/corpus/go.sum
       - run: scripts/evaluate-oss.sh
 
   # Smoke-test the composite action (action.yml) so a change that breaks the
