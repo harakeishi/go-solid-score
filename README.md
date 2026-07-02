@@ -291,11 +291,11 @@ Detects code patterns that require modification when adding new types.
 
 | Pattern | Per Instance | Max Penalty |
 |---------|-------------|-------------|
-| Type switch | −15 | −40 |
+| Type switch | −20 | −40 |
 | Type assertion (to a concrete type) | −10 | −40 |
 | Reflect usage | −5 | −20 |
 
-A density penalty applies if type-check statements exceed 15% (−10) or 30% (−20) of total statements. Interface parameters in methods earn a bonus (+5 each, max +20).
+A density penalty applies if type-check statements exceed 15% (−10) or 30% (−20) of total statements. Interface parameters in methods earn a bonus (+5 each, max +20) — except the empty interface (`any`/`interface{}`), which abandons type information rather than abstracting behavior (it is typically the very parameter a type switch downcasts), so it earns nothing.
 
 Type assertions whose target is an **interface** (capability/feature detection,
 e.g. `if f, ok := w.(http.Flusher); ok { … }`) are *not* penalized: they are
@@ -311,9 +311,19 @@ Checks whether interface implementations honour their contracts.
 
 | Violation | Penalty |
 |-----------|---------|
-| Method panics *unconditionally* (e.g. a "not implemented" stub) | −20 |
-| No-op implementation | −15 |
+| Method panics *unconditionally* (e.g. a "not implemented" stub) | −60 (capped at −60) |
+| No-op implementation | −30 each (capped at −60) |
 | Missing override of embedded interface method | −10 each |
+
+An unconditional panic in a contract method is a definitive substitutability
+violation — any caller holding the interface crashes — so a single instance is
+penalized past the violation threshold. A *no-op* is a body that claims the
+contract was fulfilled while doing nothing: empty, a bare `return`, or a
+`return` of only zero values (`return nil`, `return 0, ""`). One no-op can be
+legitimate (e.g. `Close` on a type with nothing to release), so a single
+instance stays above the violation threshold; two or more indicate a partial
+implementation and cross it. A return of a computed value, a named constant,
+or a non-zero literal is deliberate behavior and never counts as a no-op.
 
 Only methods that satisfy a declared interface are evaluated. Panics that fire
 only inside an argument/state guard (`if bad { panic(...) }`) are idiomatic

@@ -54,3 +54,49 @@ func TestPresetsValidateAgainstMetricNames(t *testing.T) {
 		t.Fatalf("preset rules reference unknown metric(s): %v", err)
 	}
 }
+
+// structMetricsFor parses the given testdata package and returns the metrics
+// for one named struct.
+func structMetricsFor(t *testing.T, pkgPath, structName string) rules.Metrics {
+	t.Helper()
+	pkgs, err := parser.Parse([]string{pkgPath})
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	for _, pkg := range pkgs {
+		for _, s := range pkg.Structs {
+			if s.Name == structName {
+				return analyzer.StructMetrics(s, pkg, nil)
+			}
+		}
+	}
+	t.Fatalf("struct %s not found in %s", structName, pkgPath)
+	return nil
+}
+
+// TestIfaceParamCount_ExcludesEmptyInterface verifies that empty-interface
+// parameters (any / interface{}) do not count toward the OCP
+// interface-parameter bonus: Router's methods take only interface{} params —
+// the very values its type switches downcast — so rewarding them would offset
+// the penalty for the switches themselves.
+func TestIfaceParamCount_ExcludesEmptyInterface(t *testing.T) {
+	m := structMetricsFor(t, "../testdata/ocp", "Router")
+	if got := m["iface_param_count"]; got != 0 {
+		t.Errorf("Router iface_param_count = %v, want 0 (interface{} params must not earn the bonus)", got)
+	}
+}
+
+// TestNoopCount_DetectsZeroValueReturns verifies that contract methods whose
+// body only returns zero values (the silent no-op) are counted, not just empty
+// bodies and bare returns.
+func TestNoopCount_DetectsZeroValueReturns(t *testing.T) {
+	m := structMetricsFor(t, "../testdata/lsp", "NoopSaver")
+	if got := m["noop_count"]; got != 2 {
+		t.Errorf("NoopSaver noop_count = %v, want 2 (Save/Load return only zero values)", got)
+	}
+
+	m = structMetricsFor(t, "../testdata/lsp", "GuardedSaver")
+	if got := m["noop_count"]; got != 0 {
+		t.Errorf("GuardedSaver noop_count = %v, want 0 (guarded methods do real work)", got)
+	}
+}

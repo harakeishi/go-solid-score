@@ -32,6 +32,11 @@ type ParamInfo struct {
 	Name     string
 	TypeName string
 	IsIface  bool
+	// IsEmptyIface refines IsIface: true when the type is the empty interface
+	// (any / interface{}), possibly named or behind pointers/collections. An
+	// empty interface abandons type information rather than abstracting
+	// behavior, so OCP's interface-parameter bonus skips it.
+	IsEmptyIface bool
 	// IsFunc reports whether the parameter's (unwrapped) type is a function
 	// type (callback/strategy) rather than a concrete collaborator.
 	IsFunc bool

@@ -100,13 +100,17 @@ rules:
     confidence: 0.3
     stop: true
 
+  # A type switch over concrete types is the canonical OCP violation: adding a
+  # new type means editing the switch. The per-instance penalty is sized so
+  # that systematic branching (two or more switches) drops the score below the
+  # violation threshold (50) on its own.
   - id: ocp-type-switch
     principle: OCP
     metric: type_switch_count
     when: "> 0"
     effect: penalty
     from_metric: true
-    scale: 15
+    scale: 20
     cap: 40
     message: "%v type switches detected"
 
@@ -173,22 +177,34 @@ rules:
     effect: none
     confidence: 0.85
 
+  # An unconditional panic in a contract method (a "not implemented" stub) is a
+  # definitive substitutability violation: any caller holding the interface
+  # crashes. A single instance is therefore penalized past the violation
+  # threshold (50); the cap keeps multiple stubs from erasing the score signal
+  # entirely on its own.
   - id: lsp-unconditional-panic
     principle: LSP
     metric: unconditional_panic_count
     when: "> 0"
     effect: penalty
     from_metric: true
-    scale: 20
-    message: "%v interface method(s) panic unconditionally (possible LSP violation)"
+    scale: 60
+    cap: 60
+    message: "%v interface method(s) panic unconditionally (LSP violation)"
 
+  # A silent no-op (empty body, bare return, or returning only zero values)
+  # claims the contract was fulfilled while doing nothing. One instance can be
+  # legitimate (e.g. Close on a type with nothing to release), so a single
+  # no-op stays above the violation threshold; two or more indicate a partial
+  # implementation and cross it.
   - id: lsp-noop
     principle: LSP
     metric: noop_count
     when: "> 0"
     effect: penalty
     from_metric: true
-    scale: 15
+    scale: 30
+    cap: 60
     message: "%v no-op interface method(s)"
 
   - id: lsp-embed-missing-override

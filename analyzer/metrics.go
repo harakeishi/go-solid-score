@@ -56,8 +56,12 @@ func StructMetrics(s *model.StructInfo, pkg *model.PackageInfo, whitelist []stri
 		ta += mth.TypeAssertCount
 		reflectN += mth.ReflectUsageCount
 		stmts += mth.StmtCount
+		// Empty interfaces (any / interface{}) are excluded: they abandon type
+		// information instead of abstracting behavior — typically the very
+		// parameter a type switch downcasts — so rewarding them would offset the
+		// penalty for the switch itself.
 		for _, p := range mth.Params {
-			if p.IsIface {
+			if p.IsIface && !p.IsEmptyIface {
 				ifaceParams++
 			}
 		}

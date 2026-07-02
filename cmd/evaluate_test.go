@@ -99,28 +99,29 @@ func TestEvaluate_NoFalsePositives(t *testing.T) {
 	}
 }
 
-// TestEvaluate_KnownFalseNegatives is the core Phase 1 assertion: the harness
-// must make the documented misses visible as false negatives rather than hiding
-// them. OCP.Router and LSP.{ReadOnlySaver,NoopSaver} score above threshold today
-// (handoff §2), so they are real violations the scorer fails to flag. The point
-// of the measurement basis is that these show up as FN, not vanish.
-func TestEvaluate_KnownFalseNegatives(t *testing.T) {
+// TestEvaluate_OCPLSPRecall pins the recall the OCP/LSP recalibration
+// restored. These violations were the harness's original known false
+// negatives: OCP.Router and LSP.{ReadOnlySaver,NoopSaver} scored above the
+// violation threshold until the type-switch/panic/no-op rules were recalibrated
+// and zero-value returns became detectable as no-ops. A regression back to
+// FN>0 here means the scorer stopped flagging a labelled real violation.
+func TestEvaluate_OCPLSPRecall(t *testing.T) {
 	rep := decodeReport(t, testdataPkgs...)
 
 	ocp, ok := rep.PerPrinciple["OCP"]
 	if !ok {
 		t.Fatal("OCP missing from report")
 	}
-	if ocp.FN < 1 {
-		t.Errorf("expected OCP to surface the known miss (Router) as a false negative, got FN=%d", ocp.FN)
+	if ocp.TP < 1 || ocp.FN != 0 {
+		t.Errorf("expected OCP to catch the known violation (Router), got TP=%d FN=%d", ocp.TP, ocp.FN)
 	}
 
 	lsp, ok := rep.PerPrinciple["LSP"]
 	if !ok {
 		t.Fatal("LSP missing from report")
 	}
-	if lsp.FN < 2 {
-		t.Errorf("expected LSP to surface the known misses (ReadOnlySaver, NoopSaver) as false negatives, got FN=%d", lsp.FN)
+	if lsp.TP < 2 || lsp.FN != 0 {
+		t.Errorf("expected LSP to catch the known violations (ReadOnlySaver, NoopSaver), got TP=%d FN=%d", lsp.TP, lsp.FN)
 	}
 }
 

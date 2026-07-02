@@ -146,3 +146,45 @@ func TestIsNoopBody_NonEmpty(t *testing.T) {
 		t.Error("non-empty body should not be noop")
 	}
 }
+
+// TestIsNoopBody_ZeroValueReturns covers the silent-no-op shape: a single
+// return whose every result is a zero-value literal claims success while
+// doing nothing, whereas returning a computed value, a named constant, or a
+// non-zero literal is deliberate behavior.
+func TestIsNoopBody_ZeroValueReturns(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+		want bool
+	}{
+		{"return nil", `return nil`, true},
+		{"return nil, nil", `return nil, nil`, true},
+		{"return false", `return false`, true},
+		{"return zero int", `return 0`, true},
+		{"return zero hex", `return 0x0`, true},
+		{"return zero float", `return 0.0`, true},
+		{"return empty string", `return ""`, true},
+		{"return mixed zero values", `return "", 0, nil`, true},
+		{"return non-zero literal", `return 1`, false},
+		{"return true", `return true`, false},
+		{"return non-empty string", `return "woof"`, false},
+		{"return named constant", `return ErrNotFound`, false},
+		{"return computed value", `return x + 1`, false},
+		{"return call result", `return f()`, false},
+		{"return nil after work", `x++; return nil`, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			src := "package test\nfunc f() any {\n" + tc.body + "\n}\n"
+			fset := token.NewFileSet()
+			file, err := parser.ParseFile(fset, "test.go", src, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			fd := file.Decls[0].(*ast.FuncDecl)
+			if got := astutil.IsNoopBody(fd.Body); got != tc.want {
+				t.Errorf("IsNoopBody(%q) = %v, want %v", tc.body, got, tc.want)
+			}
+		})
+	}
+}
