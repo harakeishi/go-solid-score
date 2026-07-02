@@ -1,0 +1,65 @@
+# Ground-truth labels for github.com/gin-gonic/gin (pinned in ../corpus/go.mod).
+# See ../README.md for the labeling policy. All labels are split=test.
+labels:
+  - id: github.com/gin-gonic/gin.Context
+    want:
+      - principle: SRP
+        expect: violation
+        reason: "the canonical Go god object: flow control (Next/Abort), params, request/response access, data binding, response rendering, error collection and a key-value store in one type"
+      - principle: ISP
+        expect: ok
+        reason: "concrete type; the only interface it satisfies is the four-method context.Context, so its width does not propagate into client contracts"
+
+  - id: github.com/gin-gonic/gin.Engine
+    want:
+      - principle: SRP
+        expect: ok
+        reason: "framework facade: router configuration plus ServeHTTP entry; cohesive around routing"
+      - principle: DIP
+        expect: ok
+        reason: "method trees, context pool and the embedded RouterGroup are internal composition, not injectable collaborators"
+
+  - id: github.com/gin-gonic/gin.RouterGroup
+    want:
+      - principle: DIP
+        expect: ok
+        reason: "holds its parent *Engine as a structural back-reference; framework-internal composition"
+
+  - id: github.com/gin-gonic/gin.IRoutes
+    want:
+      - principle: ISP
+        expect: violation
+        reason: "16 methods bundling three concerns — verb registration, middleware attachment and static file serving; any implementation must provide all of them"
+
+  - id: github.com/gin-gonic/gin.IRouter
+    want:
+      - principle: ISP
+        expect: violation
+        reason: "inherits IRoutes' 16 methods and adds Group; same bundled contract"
+
+  - id: github.com/gin-gonic/gin.ResponseWriter
+    want:
+      - principle: ISP
+        expect: violation
+        reason: "aggregates four stdlib protocols (ResponseWriter, Hijacker, Flusher, deprecated CloseNotifier) plus size/status bookkeeping into one 11-method contract every implementation must satisfy"
+
+  - id: github.com/gin-gonic/gin.LoggerConfig
+    want:
+      - principle: SRP
+        expect: ok
+        reason: "option record for the logger middleware"
+      - principle: DIP
+        expect: ok
+        reason: "values, an io.Writer and a formatter callback; already inverted"
+
+  - id: github.com/gin-gonic/gin.Param
+    want:
+      - principle: SRP
+        expect: ok
+        reason: "two-string data record"
+
+  - id: github.com/gin-gonic/gin.RouteInfo
+    want:
+      - principle: DIP
+        expect: ok
+        reason: "data record describing a registered route"

@@ -24,14 +24,18 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WORKDIR="${WORKDIR:-/tmp/gss-bench}"
 BIN="$WORKDIR/gss"
 
-# repo<TAB>shallow-clone ref. Pinned to a release tag so runs are reproducible.
+# repo<TAB>module path. The version to clone is read from the corpus module's
+# go.mod (testdata/oss/corpus) — the single source of truth shared with
+# scripts/evaluate-oss.sh, so the two harnesses cannot silently measure
+# different code. Module versions equal git release tags for every repo here.
+CORPUS_DIR="$REPO_ROOT/testdata/oss/corpus"
 CORPUS=(
-	"spf13/cobra	v1.10.2"
-	"gin-gonic/gin	v1.10.0"
-	"sirupsen/logrus	v1.9.3"
-	"uber-go/zap	v1.27.0"
-	"valyala/fasthttp	v1.58.0"
-	"etcd-io/bbolt	v1.4.0"
+	"spf13/cobra	github.com/spf13/cobra"
+	"gin-gonic/gin	github.com/gin-gonic/gin"
+	"sirupsen/logrus	github.com/sirupsen/logrus"
+	"uber-go/zap	go.uber.org/zap"
+	"valyala/fasthttp	github.com/valyala/fasthttp"
+	"etcd-io/bbolt	go.etcd.io/bbolt"
 )
 
 mkdir -p "$WORKDIR"
@@ -47,9 +51,14 @@ want() { # want <name> : true if no filter given or name is in the filter
 
 for entry in "${CORPUS[@]}"; do
 	repo="${entry%%$'\t'*}"
-	ref="${entry##*$'\t'}"
+	module="${entry##*$'\t'}"
 	name="$(basename "$repo")"
 	want "$name" || continue
+	ref="$(cd "$CORPUS_DIR" && go list -m -f '{{.Version}}' "$module")"
+	if [ -z "$ref" ]; then
+		echo "error: no pinned version for $module in $CORPUS_DIR/go.mod" >&2
+		exit 1
+	fi
 	dir="$WORKDIR/$name"
 	if [ ! -d "$dir" ]; then
 		echo "cloning $repo@$ref"

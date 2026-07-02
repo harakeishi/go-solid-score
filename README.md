@@ -495,8 +495,9 @@ harnesses cover the two error directions:
 
 | Harness | Measures | Ground truth | Direction it protects |
 |---------|----------|--------------|-----------------------|
-| [`scripts/benchmark.sh`](scripts/benchmark.sh) | mean per-principle scores over pinned OSS libraries | "good libraries score well" assumption | **precision** — flags over-penalizing sound code |
+| [`scripts/benchmark.sh`](scripts/benchmark.sh) | mean per-principle scores over pinned OSS libraries | "good libraries score well" assumption | **precision** — flags over-penalizing sound code (informal) |
 | [`scripts/evaluate.sh`](scripts/evaluate.sh) (`gss evaluate`) | per-principle precision/recall/F1 vs labelled `testdata` | inline `// solid:want` labels | **recall** — flags missing genuine violations |
+| [`scripts/evaluate-oss.sh`](scripts/evaluate-oss.sh) | per-principle confusion matrix over pinned OSS libraries | hand-written YAML labels ([`testdata/oss/labels/`](testdata/oss/labels)) | **both, on real code** — new FP on a sound real-world type or a missed labelled violation fails CI |
 
 The split matters: past calibration only ever *relaxed* penalties (improving
 precision) without ever measuring whether the tool started missing real
@@ -553,6 +554,47 @@ these sample sizes.
 
 The CI [`accuracy` job](.github/workflows/ci.yml) runs `scripts/evaluate.sh` on
 every PR.
+
+### Real-world labels (external OSS corpus)
+
+The synthetic `testdata` labels are precise but small, and violations in them
+are written by the same hands that tuned the heuristics. To measure accuracy
+on code nobody here wrote, [`testdata/oss/`](testdata/oss/README.md) carries
+hand-written YAML labels for types in a pinned corpus of well-known libraries
+(cobra, gin, logrus, zap, fasthttp, bbolt) — the same corpus
+`scripts/benchmark.sh` eyeballs, but with the "good libraries score well"
+assumption turned into explicit per-type, per-principle verdicts:
+
+```yaml
+labels:
+  - id: github.com/sirupsen/logrus.FieldLogger
+    want:
+      - principle: ISP
+        expect: violation
+        reason: "27-method interface ... the canonical fat logging interface"
+```
+
+Labels are judgments about the code, not the tool's current output, so the
+committed baselines record honest disagreements: deliberate facades
+(`cobra.Command`) the SRP rule still flags, config structs
+(`logrus.JSONFormatter`) the DIP rule still flags, and the Null-Object LSP
+trade-off (`zapcore.nopCore`) the README documents — each is a counted false
+positive that a future calibration can be measured against. Genuine
+violations (`logrus.FieldLogger`, `gin.Context`, `fasthttp.fakeAddrer`, …)
+form the real-world recall floor.
+
+```bash
+scripts/evaluate-oss.sh                # gate all repos against committed baselines
+scripts/evaluate-oss.sh logrus gin     # subset
+scripts/evaluate-oss.sh --update       # regenerate baselines after an intended change
+```
+
+The corpus is not cloned: `testdata/oss/corpus` is a Go module whose
+`go.mod`/`go.sum` pin the libraries, and the harness analyses them by import
+path out of the module cache — reproducible byte-for-byte via the module
+proxy checksums. The CI [`accuracy-oss` job](.github/workflows/ci.yml) runs
+the gate on every PR; see [`testdata/oss/README.md`](testdata/oss/README.md)
+for the labeling policy and how version bumps interact with labels.
 
 ## golangci-lint Integration
 

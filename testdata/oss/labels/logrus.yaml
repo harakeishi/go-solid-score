@@ -1,0 +1,80 @@
+# Ground-truth labels for github.com/sirupsen/logrus (pinned in ../corpus/go.mod).
+# See ../README.md for the labeling policy. All labels are split=test.
+labels:
+  - id: github.com/sirupsen/logrus.FieldLogger
+    want:
+      - principle: ISP
+        expect: violation
+        reason: "27-method interface (every level x plain/f/ln variants); the canonical fat logging interface — clients depending on it are forced to see the whole level matrix"
+
+  - id: github.com/sirupsen/logrus.Ext1FieldLogger
+    want:
+      - principle: ISP
+        expect: violation
+        reason: "extends the already-fat FieldLogger with three more Trace methods (30 total); logrus's own doc comment says \"superfluous ... Do not use\""
+
+  - id: github.com/sirupsen/logrus.StdLogger
+    want:
+      - principle: ISP
+        expect: ok
+        reason: "10 methods mirroring the stdlib log.Logger surface; a conventional adapter boundary, not a bloated contract"
+
+  - id: github.com/sirupsen/logrus.Formatter
+    want:
+      - principle: ISP
+        expect: ok
+        reason: "single-method interface (Format); exemplary segregation"
+
+  - id: github.com/sirupsen/logrus.Hook
+    want:
+      - principle: ISP
+        expect: ok
+        reason: "two-method interface (Levels, Fire)"
+
+  - id: github.com/sirupsen/logrus.BufferPool
+    want:
+      - principle: ISP
+        expect: ok
+        reason: "two-method pool interface (Get, Put)"
+
+  - id: github.com/sirupsen/logrus.Logger
+    want:
+      - principle: SRP
+        expect: ok
+        reason: "the wide level-method surface (Debugf/Info/Warnln/...) uniformly delegates to Entry; the type is cohesive around one responsibility: dispatching log records"
+      - principle: OCP
+        expect: ok
+        reason: "extension happens via Hooks and Formatter interfaces, not type switching"
+      - principle: ISP
+        expect: ok
+        reason: "concrete type; its method count is API surface, and the small interfaces (Formatter, Hook, StdLogger) exist for clients that want less"
+      - principle: DIP
+        expect: ok
+        reason: "collaborators are abstractions: io.Writer out, Formatter, Hooks; the design is dependency-inverted"
+
+  - id: github.com/sirupsen/logrus.Entry
+    want:
+      - principle: DIP
+        expect: ok
+        reason: "holds its parent *Logger (structural back-reference) and data fields; not a coupling problem"
+
+  - id: github.com/sirupsen/logrus.JSONFormatter
+    want:
+      - principle: SRP
+        expect: ok
+        reason: "one job: serialize an Entry to JSON; fields are output options"
+      - principle: DIP
+        expect: ok
+        reason: "config struct of value options; its only concrete contact is the call-time *Entry parameter, which is caller-supplied data, not an owned dependency (scoring-analysis.md root cause 2)"
+
+  - id: github.com/sirupsen/logrus.TextFormatter
+    want:
+      - principle: DIP
+        expect: ok
+        reason: "same shape as JSONFormatter: value options plus the call-time *Entry parameter; owns no collaborator"
+
+  - id: github.com/sirupsen/logrus.MutexWrap
+    want:
+      - principle: SRP
+        expect: ok
+        reason: "tiny lock wrapper with an enable/disable switch"

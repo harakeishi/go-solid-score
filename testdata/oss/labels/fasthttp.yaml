@@ -1,0 +1,65 @@
+# Ground-truth labels for github.com/valyala/fasthttp (pinned in ../corpus/go.mod).
+# See ../README.md for the labeling policy. All labels are split=test.
+labels:
+  - id: github.com/valyala/fasthttp.Request
+    want:
+      - principle: SRP
+        expect: ok
+        reason: "zero-allocation buffer type: large but cohesive around one HTTP request's wire state; the size is the performance design, not scattered responsibilities"
+      - principle: DIP
+        expect: ok
+        reason: "owns byte buffers and value composition (URI, Args, header); there is no collaborator to invert"
+
+  - id: github.com/valyala/fasthttp.URI
+    want:
+      - principle: DIP
+        expect: ok
+        reason: "byte-buffer value type; all fields are owned wire data"
+
+  - id: github.com/valyala/fasthttp.RequestCtx
+    want:
+      - principle: SRP
+        expect: violation
+        reason: "fasthttp's god object: request and response state, connection introspection, logging, hijacking, timeout control and a user-value store in one type"
+
+  - id: github.com/valyala/fasthttp.Server
+    want:
+      - principle: OCP
+        expect: ok
+        reason: "behavior extends through handler and callback fields, not type switching"
+
+  - id: github.com/valyala/fasthttp.Response
+    want:
+      - principle: OCP
+        expect: ok
+        reason: "its type assertions are internal fast-path downcasts to fasthttp's own stream types, not an extension point that third-party types flow through"
+
+  - id: github.com/valyala/fasthttp.fakeAddrer
+    want:
+      - principle: LSP
+        expect: violation
+        reason: "embeds net.Conn but Read/Write/Close panic unconditionally (\"BUG: unexpected call\"); any caller holding it as net.Conn crashes — a textbook substitutability break, even if internal"
+
+  - id: github.com/valyala/fasthttp.noopCacheManager
+    want:
+      - principle: LSP
+        expect: ok
+        reason: "deliberate Null Object for the cache-disabled path"
+
+  - id: github.com/valyala/fasthttp.Logger
+    want:
+      - principle: ISP
+        expect: ok
+        reason: "single-method logging interface (Printf) — the segregated alternative to fat logger contracts"
+
+  - id: github.com/valyala/fasthttp.RoundTripper
+    want:
+      - principle: ISP
+        expect: ok
+        reason: "single-method transport seam"
+
+  - id: github.com/valyala/fasthttp.BalancingClient
+    want:
+      - principle: ISP
+        expect: ok
+        reason: "three-method client abstraction for load balancing"
