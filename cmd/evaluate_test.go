@@ -260,3 +260,51 @@ func TestEvaluate_UnknownSplit(t *testing.T) {
 		t.Errorf("expected unknown-split error, got: %v", err)
 	}
 }
+
+// TestEvaluate_ExternalLabelUnmatchedID fails loudly when an external label's
+// ID joins to no analyzed target — the corpus-drift guard: a version bump that
+// renames or removes a labelled type must not let the label (and its TN/FP
+// row) silently leave the confusion matrix.
+func TestEvaluate_ExternalLabelUnmatchedID(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "labels.yaml")
+	yaml := `labels:
+  - id: github.com/harakeishi/go-solid-score/testdata/isp.FatInterface
+    want:
+      - { principle: ISP, expect: violation }
+  - id: github.com/harakeishi/go-solid-score/testdata/isp.RenamedAway
+    want:
+      - { principle: ISP, expect: ok }
+`
+	if err := os.WriteFile(path, []byte(yaml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := runEvaluateCapture(t, []string{"--labels", path}, testdataPkgs...)
+	if err == nil || !strings.Contains(err.Error(), "matched no analyzed target") {
+		t.Errorf("expected an unmatched-ID error, got: %v", err)
+	}
+	if err != nil && !strings.Contains(err.Error(), "RenamedAway") {
+		t.Errorf("error should name the offending ID, got: %v", err)
+	}
+	if err != nil && strings.Contains(err.Error(), "FatInterface") {
+		t.Errorf("error should not name the matched ID, got: %v", err)
+	}
+}
+
+// TestEvaluate_ExternalLabelMatchedID accepts an external label whose ID joins
+// to an analyzed target and folds it into the report.
+func TestEvaluate_ExternalLabelMatchedID(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "labels.yaml")
+	yaml := `labels:
+  - id: github.com/harakeishi/go-solid-score/testdata/isp.FatInterface
+    want:
+      - { principle: ISP, expect: violation }
+`
+	if err := os.WriteFile(path, []byte(yaml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runEvaluateCapture(t, []string{"--labels", path}, testdataPkgs...); err != nil {
+		t.Errorf("matched external label should evaluate cleanly, got: %v", err)
+	}
+}

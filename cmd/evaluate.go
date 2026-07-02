@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sort"
+	"strings"
 
 	"github.com/harakeishi/go-solid-score/analyzer"
 	"github.com/harakeishi/go-solid-score/config"
@@ -175,12 +177,43 @@ func buildEvaluation(cfg *config.Config, patterns []string, f *evaluateFlags, sp
 		if err != nil {
 			return eval.Report{}, err
 		}
+		// An external label whose ID matches no analyzed target would silently
+		// leave the join — and with it the confusion matrix. For TP/FN labels the
+		// baseline's recall-denominator check would eventually notice, but ok
+		// labels (TN/FP rows) would just vanish, and a vanished FP row keeps the
+		// baseline's FP count as a high-water mark that masks the next new false
+		// positive. Corpus drift (a version bump renaming or removing a labelled
+		// type) must therefore be loud, not silent.
+		if missing := unmatchedLabelIDs(ext, scored); len(missing) > 0 {
+			return eval.Report{}, fmt.Errorf(
+				"label file %s: %d label ID(s) matched no analyzed target "+
+					"(type renamed/removed by a corpus version bump, or outside the given patterns?): %s",
+				f.labels, len(missing), strings.Join(missing, ", "))
+		}
 		labels = append(labels, ext...)
 	}
 
 	thresholds := principleThresholds(cfg)
 
 	return eval.BuildReport(labels, scored, thresholds, split, f.bootstrap, f.seed), nil
+}
+
+// unmatchedLabelIDs returns the sorted, deduplicated IDs of external labels
+// that join to no scored target. Inline labels are exempt from this check by
+// construction (they are parsed out of the analyzed source itself); external
+// labels have no such anchor, so an unmatched ID is evidence of corpus drift.
+func unmatchedLabelIDs(ext []eval.Label, scored map[string]map[analyzer.Principle]float64) []string {
+	seen := make(map[string]bool)
+	var missing []string
+	for _, l := range ext {
+		if _, ok := scored[l.ID]; ok || seen[l.ID] {
+			continue
+		}
+		seen[l.ID] = true
+		missing = append(missing, l.ID)
+	}
+	sort.Strings(missing)
+	return missing
 }
 
 // externalLabels reads ground-truth labels from an external YAML file (for
