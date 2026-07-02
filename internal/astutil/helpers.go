@@ -88,11 +88,35 @@ func IsInterfaceType(t types.Type) bool {
 // interface{}), possibly behind pointers or collections, including named
 // empty interfaces. An empty interface abandons type information rather than
 // abstracting behavior, so OCP does not reward it as an interface parameter.
+//
+// A generic type parameter is NOT an empty interface, even though its
+// underlying type is its constraint interface and a loose constraint (any,
+// comparable) has no methods: `v T` keeps full type identity — generics are
+// the OCP-friendly alternative to interface{} + type switch — so the walk
+// checks for *types.TypeParam before taking Underlying at every level.
 func IsEmptyInterfaceType(t types.Type) bool {
-	return unwrapElem(t, func(u types.Type) bool {
-		iface, ok := u.(*types.Interface)
-		return ok && iface.NumMethods() == 0
-	})
+	for i := 0; i < unwrapNestDepth; i++ {
+		if _, ok := t.(*types.TypeParam); ok {
+			return false
+		}
+		switch c := t.Underlying().(type) {
+		case *types.Interface:
+			return c.NumMethods() == 0
+		case *types.Pointer:
+			t = c.Elem()
+		case *types.Slice:
+			t = c.Elem()
+		case *types.Array:
+			t = c.Elem()
+		case *types.Chan:
+			t = c.Elem()
+		case *types.Map:
+			t = c.Elem()
+		default:
+			return false
+		}
+	}
+	return false
 }
 
 // IsFuncType reports whether t denotes a function type, including named
@@ -244,11 +268,15 @@ func IsNoopBody(body *ast.BlockStmt) bool {
 }
 
 // isZeroValueExpr reports whether e is a zero-value literal: nil, false, a
-// numeric literal equal to zero, or an empty string. Identifiers other than
-// nil/false (named constants, variables) are excluded — a named constant
-// expresses a deliberate result even when its value happens to be zero.
+// numeric literal equal to zero, or an empty string, possibly parenthesized.
+// Identifiers other than nil/false (named constants, variables) are excluded —
+// a named constant expresses a deliberate result even when its value happens
+// to be zero. Conversion forms (error(nil), []byte(nil)) are not recognized;
+// they would need type information this syntactic check does not have.
 func isZeroValueExpr(e ast.Expr) bool {
 	switch v := e.(type) {
+	case *ast.ParenExpr:
+		return isZeroValueExpr(v.X)
 	case *ast.Ident:
 		return v.Name == "nil" || v.Name == "false"
 	case *ast.BasicLit:

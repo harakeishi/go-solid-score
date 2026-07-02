@@ -98,3 +98,51 @@ type S struct {
 		}
 	}
 }
+
+// TestIsEmptyInterfaceType exercises the empty-interface check on type-checked
+// types. The critical case is the generic type parameter: its underlying type
+// is its constraint interface — method-less for `any` — but `v T` keeps full
+// type identity, so it must NOT be classified as an empty interface (that
+// would strip generic methods of the OCP interface-parameter bonus precisely
+// when the constraint is loosest).
+func TestIsEmptyInterfaceType(t *testing.T) {
+	src := `package p
+type Iface interface{ M() }
+type NamedEmpty interface{}
+type S[T any] struct {
+	tp       T             // type parameter -> keeps type identity, not empty
+	tpSlice  []T           // collection of a type parameter -> not empty
+	empty    any           // the empty interface itself
+	emptyOld interface{}   // spelled the old way
+	emptyPtr *any          // behind a pointer
+	emptyCol []interface{} // behind a collection
+	named    NamedEmpty    // named empty interface
+	iface    Iface         // non-empty interface
+	basic    int           // not an interface at all
+}`
+	ft := fieldTypes(t, src)
+
+	cases := []struct {
+		field string
+		want  bool
+	}{
+		{"tp", false},
+		{"tpSlice", false},
+		{"empty", true},
+		{"emptyOld", true},
+		{"emptyPtr", true},
+		{"emptyCol", true},
+		{"named", true},
+		{"iface", false},
+		{"basic", false},
+	}
+	for _, tc := range cases {
+		tv := ft[tc.field]
+		if tv == nil {
+			t.Fatalf("field %q not found", tc.field)
+		}
+		if got := astutil.IsEmptyInterfaceType(tv); got != tc.want {
+			t.Errorf("IsEmptyInterfaceType(%s) = %v, want %v", tc.field, got, tc.want)
+		}
+	}
+}

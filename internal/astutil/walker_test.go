@@ -165,6 +165,8 @@ func TestIsNoopBody_ZeroValueReturns(t *testing.T) {
 		{"return zero float", `return 0.0`, true},
 		{"return empty string", `return ""`, true},
 		{"return mixed zero values", `return "", 0, nil`, true},
+		{"return parenthesized nil", `return (nil)`, true},
+		{"return conversion of nil (undetected)", `return error(nil)`, false},
 		{"return non-zero literal", `return 1`, false},
 		{"return true", `return true`, false},
 		{"return non-empty string", `return "woof"`, false},

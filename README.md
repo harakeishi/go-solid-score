@@ -325,6 +325,15 @@ instance stays above the violation threshold; two or more indicate a partial
 implementation and cross it. A return of a computed value, a named constant,
 or a non-zero literal is deliberate behavior and never counts as a no-op.
 
+**Known trade-off:** a deliberate *Null Object* — a type whose every method
+intentionally does nothing, like a `zap.NewNop()`-style no-op logger — is
+structurally identical to a partial implementation that fakes success, so it
+gets flagged too; no static signal distinguishes the two. If the pattern is
+idiomatic in your repo, disable or retune the `lsp-noop` rule (see
+[Customizing Scoring Rules](#customizing-scoring-rules)). Only interfaces
+declared in the same package are matched, so null objects implementing
+external interfaces are unaffected.
+
 Only methods that satisfy a declared interface are evaluated. Panics that fire
 only inside an argument/state guard (`if bad { panic(...) }`) are idiomatic
 fail-fast in Go and are **not** penalized — only panics on the method's
