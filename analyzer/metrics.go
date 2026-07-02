@@ -113,6 +113,7 @@ func StructMetrics(s *model.StructInfo, pkg *model.PackageInfo, whitelist []stri
 	m["unconditional_panic_count"] = float64(panicCount)
 	m["noop_count"] = float64(noopCount)
 	m["embed_missing_override_count"] = float64(embedMissingOverrides(s, pkg))
+	m["embedded_iface_injected"] = boolMetric(embeddedIfaceInjected(s, pkg))
 
 	// --- ISP: public-surface size, large-interface implementation, cohesion ---
 	m["is_decorator"] = boolMetric(isDecoratorPattern(s, pubMethods))
@@ -261,7 +262,7 @@ var metricNames = []string{
 	"type_switch_count", "type_assert_count", "reflect_count", "total_stmts",
 	"type_check_density", "iface_param_count",
 	"implements_interface", "unconditional_panic_count", "noop_count",
-	"embed_missing_override_count",
+	"embed_missing_override_count", "embedded_iface_injected",
 	"is_decorator", "public_lcom4", "isp_large_iface_penalty", "isp_composition_bonus",
 	"weighted_dep_total", "weighted_dep_iface", "structural_dep_total",
 	"iface_dep_ratio", "has_constructor_injection", "is_data_type",

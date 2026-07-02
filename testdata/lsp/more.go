@@ -61,6 +61,26 @@ type LazyCodec struct {
 
 func (l *LazyCodec) ContentType() string { return "application/x-lazy" }
 
+// LoggingCodec is the legitimate twin of LazyCodec: the identical AST shape
+// (embed Codec, override one method), but the constructor injects a real
+// implementation for the embedded interface to delegate to. This is the
+// standard Go decorator/middleware pattern and must NOT be penalized for the
+// methods it deliberately does not override.
+// solid:want LSP=ok reason="decorator: embedded Codec is constructor-injected, so non-overridden methods delegate to a real implementation — fully substitutable"
+type LoggingCodec struct {
+	Codec
+	logs []string
+}
+
+func NewLoggingCodec(inner Codec) *LoggingCodec {
+	return &LoggingCodec{Codec: inner}
+}
+
+func (l *LoggingCodec) Encode(v any) ([]byte, error) {
+	l.logs = append(l.logs, "encode")
+	return l.Codec.Encode(v)
+}
+
 // MemStore fully honours the Store contract.
 // solid:want LSP=ok reason="all contract methods are real implementations with honest results; fully substitutable for Store"
 type MemStore struct {

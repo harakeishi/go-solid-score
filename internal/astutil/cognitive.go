@@ -9,7 +9,12 @@ import (
 // following the SonarSource specification (G. Ann Campbell, "Cognitive
 // Complexity — a new way of measuring understandability", 2018), as
 // implemented for Go by gocognit. funcName is the enclosing function's name
-// and is used to detect direct recursion; pass "" when unknown.
+// and recvName the receiver variable's name; together they detect direct
+// recursion. For a method (recvName != "") only recvName.funcName(...) calls
+// count — a bare funcName(...) call there reaches a same-named package
+// function, not the method. For a package-level function (recvName == "")
+// bare funcName(...) calls count. Indirect recursion (through another
+// variable holding the same value, or mutual recursion) is out of scope.
 //
 // Unlike cyclomatic complexity (which counts branches flat), cognitive
 // complexity charges a growing nesting penalty: each control-flow structure
@@ -24,17 +29,18 @@ import (
 //   - +1 flat for goto and for break/continue with a label
 //   - +1 flat for a direct recursive call
 //   - function literals add a nesting level but no increment
-func CognitiveComplexity(body *ast.BlockStmt, funcName string) int {
+func CognitiveComplexity(body *ast.BlockStmt, funcName, recvName string) int {
 	if body == nil {
 		return 0
 	}
-	v := &cognitiveVisitor{funcName: funcName}
+	v := &cognitiveVisitor{funcName: funcName, recvName: recvName}
 	v.walkStmt(body, 0)
 	return v.score
 }
 
 type cognitiveVisitor struct {
 	funcName string
+	recvName string
 	score    int
 }
 
@@ -171,7 +177,7 @@ func (v *cognitiveVisitor) walkExpr(e ast.Expr, nesting int) {
 	case *ast.UnaryExpr:
 		v.walkExpr(ex.X, nesting)
 	case *ast.CallExpr:
-		if id, ok := ex.Fun.(*ast.Ident); ok && v.funcName != "" && id.Name == v.funcName {
+		if v.isRecursiveCall(ex) {
 			v.score++ // direct recursion
 		}
 		v.walkExpr(ex.Fun, nesting)
@@ -201,6 +207,27 @@ func (v *cognitiveVisitor) walkExpr(e ast.Expr, nesting int) {
 	case *ast.KeyValueExpr:
 		v.walkExpr(ex.Value, nesting)
 	}
+}
+
+// isRecursiveCall reports whether a call re-enters the enclosing function: a
+// bare funcName(...) for a package-level function, or recvName.funcName(...)
+// for a method. Bare-ident matching is deliberately disabled inside methods —
+// there such a call reaches a same-named package function, not the method.
+func (v *cognitiveVisitor) isRecursiveCall(call *ast.CallExpr) bool {
+	if v.funcName == "" {
+		return false
+	}
+	switch fun := call.Fun.(type) {
+	case *ast.Ident:
+		return v.recvName == "" && fun.Name == v.funcName
+	case *ast.SelectorExpr:
+		if v.recvName == "" || fun.Sel.Name != v.funcName {
+			return false
+		}
+		recv, ok := fun.X.(*ast.Ident)
+		return ok && recv.Name == v.recvName
+	}
+	return false
 }
 
 // walkLogicalOperands descends into the non-logical operands of a &&/|| tree

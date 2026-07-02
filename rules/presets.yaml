@@ -228,9 +228,18 @@ rules:
     cap: 60
     message: "%v no-op interface method(s)"
 
+  # Embedding an in-package interface without overriding its methods is only a
+  # smell when nothing fills the embedded value: the zero struct then panics on
+  # every inherited call. A decorator/middleware whose constructor takes the
+  # embedded interface as a parameter is the legitimate form of the identical
+  # AST shape, so it is exempted via embedded_iface_injected. Known trade-off:
+  # a decorator whose inner value arrives via a setter or composite literal
+  # (not a New* constructor parameter) is still flagged — disable or retune
+  # this rule per repo if that pattern is idiomatic there.
   - id: lsp-embed-missing-override
     principle: LSP
     metric: embed_missing_override_count
+    where: ["embedded_iface_injected == 0"]
     when: "> 0"
     effect: penalty
     from_metric: true

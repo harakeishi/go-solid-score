@@ -1,6 +1,8 @@
 package analyzer
 
 import (
+	"strings"
+
 	"github.com/harakeishi/go-solid-score/model"
 )
 
@@ -49,6 +51,35 @@ func embedsInPackageInterface(s *model.StructInfo, pkg *model.PackageInfo) bool 
 			if iface.Name == embed {
 				return true
 			}
+		}
+	}
+	return false
+}
+
+// embeddedIfaceInjected reports whether a constructor takes one of the
+// struct's embedded in-package interfaces as a parameter. That is the static
+// signature of a legitimate decorator/middleware — the embedded interface is
+// handed a real implementation to delegate to — as opposed to embedding an
+// interface merely to claim conformance and leaving it nil, where every
+// non-overridden method panics at runtime. The two shapes are otherwise
+// identical in the AST, so this is the discriminator the embed-missing-override
+// rule uses to spare decorators.
+func embeddedIfaceInjected(s *model.StructInfo, pkg *model.PackageInfo) bool {
+	constructor := findConstructor(s.Name, pkg)
+	if constructor == nil {
+		return false
+	}
+	embeds := make(map[string]bool, len(s.Embeddings))
+	for _, embed := range s.Embeddings {
+		for _, iface := range pkg.Interfaces {
+			if iface.Name == embed {
+				embeds[embed] = true
+			}
+		}
+	}
+	for _, p := range constructor.Params {
+		if embeds[strings.TrimPrefix(p.TypeName, "*")] {
+			return true
 		}
 	}
 	return false

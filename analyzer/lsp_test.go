@@ -99,3 +99,28 @@ func TestLSPAnalyzer_EmbeddedInterfaceUnderOverride(t *testing.T) {
 	}
 	t.Error("LazyCodec not found in results")
 }
+
+// TestLSPAnalyzer_InjectedDecoratorNotPenalized is the counterpart of the
+// LazyCodec test: the identical embed-and-override-little AST shape is the
+// standard decorator pattern when the constructor injects a real value for
+// the embedded interface, and must keep a full score.
+func TestLSPAnalyzer_InjectedDecoratorNotPenalized(t *testing.T) {
+	pkgs, err := parser.Parse([]string{"../testdata/lsp"})
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+
+	a := analyzer.NewLSPAnalyzer()
+	results := a.Analyze(pkgs[0])
+
+	for _, r := range results {
+		if r.TargetName == "LoggingCodec" {
+			if r.Score < 100 {
+				t.Errorf("LoggingCodec LSP score %.1f should be 100 "+
+					"(constructor-injected decorator; non-overridden methods delegate)", r.Score)
+			}
+			return
+		}
+	}
+	t.Error("LoggingCodec not found in results")
+}

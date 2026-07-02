@@ -191,7 +191,7 @@ func f(xs []int) func() int {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			body, name := parseFunc(t, tc.src)
-			got := astutil.CognitiveComplexity(body, name)
+			got := astutil.CognitiveComplexity(body, name, "")
 			if got != tc.want {
 				t.Errorf("CognitiveComplexity = %d, want %d", got, tc.want)
 			}
@@ -236,8 +236,8 @@ func f(a, b, c, d int) int {
 	flatBody, flatName := parseFunc(t, flat)
 	nestedBody, nestedName := parseFunc(t, nested)
 
-	flatScore := astutil.CognitiveComplexity(flatBody, flatName)
-	nestedScore := astutil.CognitiveComplexity(nestedBody, nestedName)
+	flatScore := astutil.CognitiveComplexity(flatBody, flatName, "")
+	nestedScore := astutil.CognitiveComplexity(nestedBody, nestedName, "")
 
 	// Both have cyclomatic complexity 5 (4 branches + 1), but cognitively the
 	// nested version is 1+2+3+4=10 vs 4 flat.
@@ -259,7 +259,76 @@ func f(a, b, c, d int) int {
 }
 
 func TestCognitiveComplexity_NilBody(t *testing.T) {
-	if got := astutil.CognitiveComplexity(nil, "f"); got != 0 {
+	if got := astutil.CognitiveComplexity(nil, "f", ""); got != 0 {
 		t.Errorf("nil body = %d, want 0", got)
+	}
+}
+
+// TestCognitiveComplexity_MethodRecursion pins the receiver-aware recursion
+// rules: a method calling itself through its receiver counts, while a method
+// calling a same-named package function does not.
+func TestCognitiveComplexity_MethodRecursion(t *testing.T) {
+	cases := []struct {
+		name     string
+		src      string
+		recvName string
+		want     int
+	}{
+		{
+			name: "method self-recursion through receiver counts",
+			src: `package p
+func (w *Walker) Walk(n int) {
+	if n > 0 { // +1
+		w.Walk(n - 1) // +1 recursion
+	}
+}`,
+			recvName: "w",
+			want:     2,
+		},
+		{
+			name: "method calling same-named package function is not recursion",
+			src: `package p
+func (p *Parser) parse(s string) string {
+	if s == "" { // +1
+		return ""
+	}
+	return parse(s) // package function, no charge
+}`,
+			recvName: "p",
+			want:     1,
+		},
+		{
+			name: "method calling same-named method on another value is not direct recursion",
+			src: `package p
+func (w *Walker) Walk(n int) {
+	if n > 0 { // +1
+		w.child.Walk(n - 1) // different receiver expression, no charge
+	}
+}`,
+			recvName: "w",
+			want:     1,
+		},
+		{
+			name: "unnamed receiver disables bare-ident matching",
+			src: `package p
+func (Walker) parse(s string) string {
+	if s == "" { // +1
+		return ""
+	}
+	return parse(s) // package function, no charge
+}`,
+			recvName: "_",
+			want:     1,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			body, name := parseFunc(t, tc.src)
+			got := astutil.CognitiveComplexity(body, name, tc.recvName)
+			if got != tc.want {
+				t.Errorf("CognitiveComplexity = %d, want %d", got, tc.want)
+			}
+		})
 	}
 }

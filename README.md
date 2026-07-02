@@ -234,7 +234,7 @@ Structs expose: `method_count`, `public_method_count`, `field_count`,
 `type_switch_count`, `type_assert_count`, `reflect_count`,
 `total_stmts`, `type_check_density`, `iface_param_count`,
 `implements_interface`, `unconditional_panic_count`, `noop_count`,
-`embed_missing_override_count`, `is_decorator`, `public_lcom4`,
+`embed_missing_override_count`, `embedded_iface_injected`, `is_decorator`, `public_lcom4`,
 `isp_large_iface_penalty`, `isp_composition_bonus`, `weighted_dep_total`,
 `weighted_dep_iface`, `structural_dep_total`, `iface_dep_ratio`,
 `has_constructor_injection`, `is_data_type`. Interfaces expose:
