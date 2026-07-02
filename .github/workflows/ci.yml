@@ -54,6 +54,27 @@ jobs:
           go-version-file: go.mod
       - run: scripts/evaluate.sh
 
+  # Real-world accuracy gate: the same confusion-matrix regression check as
+  # `accuracy`, but against hand-labelled types in pinned OSS libraries
+  # (testdata/oss/). This is the measured form of scripts/benchmark.sh's "good
+  # libraries score well" assumption: a scoring change that newly flags a sound
+  # real-world type (new FP) or stops catching a labelled real-world violation
+  # (TP drop) fails here. The corpus is fetched from the Go module proxy at the
+  # versions pinned in testdata/oss/corpus/go.{mod,sum} — no clone, no mutable
+  # refs. See testdata/oss/README.md for the labeling policy.
+  accuracy-oss:
+    runs-on: ubuntu-latest
+    # Same cgo hardening as `accuracy`: go/packages fully builds the corpus
+    # source, and none of it needs a C toolchain.
+    env:
+      CGO_ENABLED: "0"
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+      - run: scripts/evaluate-oss.sh
+
   # Smoke-test the composite action (action.yml) so a change that breaks the
   # download/run wiring — or a mistyped CLI flag — is caught here rather than by
   # downstream consumers. We exercise both modes and assert the exit codes,

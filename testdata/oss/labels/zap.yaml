@@ -1,0 +1,96 @@
+# Ground-truth labels for go.uber.org/zap and go.uber.org/zap/zapcore
+# (pinned in ../corpus/go.mod).
+# See ../README.md for the labeling policy. All labels are split=test.
+labels:
+  - id: go.uber.org/zap.Logger
+    want:
+      - principle: SRP
+        expect: ok
+        reason: "cohesive around structured log dispatch; level methods share the core/clock/error-output state"
+      - principle: ISP
+        expect: ok
+        reason: "concrete API type; abstraction happens at zapcore.Core, which is small"
+
+  - id: go.uber.org/zap.SugaredLogger
+    want:
+      - principle: SRP
+        expect: ok
+        reason: "a deliberate convenience facade over Logger; the wide printf-style surface delegates uniformly to base"
+      - principle: ISP
+        expect: ok
+        reason: "concrete convenience type; nothing implements it"
+
+  - id: go.uber.org/zap.Config
+    want:
+      - principle: DIP
+        expect: ok
+        reason: "declarative config struct: values, an EncoderConfig value and sampling options; owns no concrete collaborator"
+
+  - id: go.uber.org/zap.SamplingConfig
+    want:
+      - principle: DIP
+        expect: ok
+        reason: "value config plus an optional hook callback"
+
+  - id: go.uber.org/zap/zapcore.Core
+    want:
+      - principle: ISP
+        expect: ok
+        reason: "five-method interface; the abstraction seam of the whole library"
+
+  - id: go.uber.org/zap/zapcore.LevelEnabler
+    want:
+      - principle: ISP
+        expect: ok
+        reason: "single-method interface (Enabled)"
+
+  - id: go.uber.org/zap/zapcore.WriteSyncer
+    want:
+      - principle: ISP
+        expect: ok
+        reason: "io.Writer plus Sync; minimal composition of stdlib protocols"
+
+  - id: go.uber.org/zap/zapcore.ObjectMarshaler
+    want:
+      - principle: ISP
+        expect: ok
+        reason: "single-method marshaling interface"
+
+  - id: go.uber.org/zap/zapcore.Clock
+    want:
+      - principle: ISP
+        expect: ok
+        reason: "two-method time source (Now, NewTicker)"
+
+  - id: go.uber.org/zap/zapcore.ObjectEncoder
+    want:
+      - principle: ISP
+        expect: ok
+        reason: "24 typed Add* methods are the zero-allocation design: one method per primitive type instead of reflection; segregating them would gut the design, and the Go community does not treat this as an ISP failure"
+
+  - id: go.uber.org/zap/zapcore.nopCore
+    want:
+      - principle: LSP
+        expect: ok
+        reason: "deliberate Null Object behind zap.NewNop(); every method intentionally does nothing — the exact trade-off the README documents for the lsp-noop rule"
+
+  - id: go.uber.org/zap/zapcore.ioCore
+    want:
+      - principle: SRP
+        expect: ok
+        reason: "the reference Core implementation: encoder + syncer + level, used together by every method"
+      - principle: LSP
+        expect: ok
+        reason: "full, honest implementation of Core"
+
+  - id: go.uber.org/zap/zapcore.EncoderConfig
+    want:
+      - principle: DIP
+        expect: ok
+        reason: "value configuration for encoders: strings and encoder-function values"
+
+  - id: go.uber.org/zap/zapcore.Field
+    want:
+      - principle: OCP
+        expect: ok
+        reason: "the switch over FieldType is a deliberate closed enum of primitive kinds (zero-alloc design), not an open extension point that new user types would force open"

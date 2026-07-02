@@ -1,0 +1,47 @@
+# Ground-truth labels for go.etcd.io/bbolt (pinned in ../corpus/go.mod).
+# See ../README.md for the labeling policy. All labels are split=test.
+labels:
+  - id: go.etcd.io/bbolt.DB
+    want:
+      - principle: SRP
+        expect: ok
+        reason: "an embedded-storage kernel: mmap, freelist and transaction lifecycle are facets of the single responsibility of owning one database file"
+
+  - id: go.etcd.io/bbolt.Tx
+    want:
+      - principle: DIP
+        expect: ok
+        reason: "holds its parent *DB, meta page and bucket root — structural composition inside the storage engine, not injectable collaborators"
+
+  - id: go.etcd.io/bbolt.Bucket
+    want:
+      - principle: DIP
+        expect: ok
+        reason: "holds its *Tx back-reference and page/node internals; same structural composition"
+
+  - id: go.etcd.io/bbolt.Logger
+    want:
+      - principle: ISP
+        expect: violation
+        reason: "12-method logging facade interface (Debug/Info/Warning/Error/Fatal/Panic x plain/f); bbolt's FieldLogger analogue — consumers needing one level must implement all"
+
+  - id: go.etcd.io/bbolt.KVStringer
+    want:
+      - principle: ISP
+        expect: ok
+        reason: "two-method formatting interface"
+
+  - id: go.etcd.io/bbolt.Options
+    want:
+      - principle: SRP
+        expect: ok
+        reason: "open-options record"
+      - principle: DIP
+        expect: ok
+        reason: "values plus an optional Logger interface; already inverted"
+
+  - id: go.etcd.io/bbolt.BucketStats
+    want:
+      - principle: DIP
+        expect: ok
+        reason: "integer statistics record"
