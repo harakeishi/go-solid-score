@@ -229,15 +229,32 @@ rule_defaults:
 ### Available metrics
 
 Structs expose: `method_count`, `public_method_count`, `field_count`,
-`has_fields`, `lscc`, `cohesion_method_count`,
-`total_complexity`, `type_switch_count`, `type_assert_count`, `reflect_count`,
+`has_fields`, `lscc`, `cohesion_method_count`, `own_field_access_method_count`,
+`total_complexity`, `cognitive_complexity`, `max_cognitive_complexity`,
+`type_switch_count`, `type_assert_count`, `reflect_count`,
 `total_stmts`, `type_check_density`, `iface_param_count`,
 `implements_interface`, `unconditional_panic_count`, `noop_count`,
 `embed_missing_override_count`, `is_decorator`, `public_lcom4`,
 `isp_large_iface_penalty`, `isp_composition_bonus`, `weighted_dep_total`,
 `weighted_dep_iface`, `structural_dep_total`, `iface_dep_ratio`,
-`has_constructor_injection`. Interfaces expose: `total_methods`,
-`direct_methods`, `embed_count`. Boolean metrics are `0` or `1`.
+`has_constructor_injection`, `is_data_type`. Interfaces expose:
+`total_methods`, `direct_methods`, `embed_count`. Boolean metrics are `0` or `1`.
+
+Metric notes:
+
+- `total_complexity` is **WMC** (Weighted Methods per Class, Chidamber &
+  Kemerer 1994) with cyclomatic complexity as the method weight — the sum of
+  every method's cyclomatic complexity. WMC is one of the best-validated
+  defect predictors in the OO metrics literature (Basili–Briand–Melo 1996,
+  Gyimóthy 2005), but it **correlates strongly with class size** (El Emam
+  2001), so the presets treat it as a secondary signal alongside the
+  size-independent LSCC cohesion metric rather than scoring on it alone.
+- `cognitive_complexity` / `max_cognitive_complexity` are the sum and
+  per-method maximum of **cognitive complexity** (SonarSource), which unlike
+  cyclomatic complexity charges a growing penalty for nesting depth —
+  measuring how hard the code is for a human to read rather than how many
+  test paths it has. Per-method thresholds by convention: 15 (Sonar S3776
+  default) and 30 (golangci-lint `gocognit` default).
 
 The complete set of built-in rules — and the reference for the schema above —
 is [`rules/presets.yaml`](rules/presets.yaml). Copy any rule from there into
@@ -280,7 +297,9 @@ The thresholds live in [`rules/presets.yaml`](rules/presets.yaml) (the
 `srp-cohesion` rule) rather than in code, so they can be retuned per repo
 without a rebuild.
 
-Additional penalties: cyclomatic complexity > 20 (−10) or > 40 (−20), method count > 10 (−5) or > 15 (−15).
+Additional penalties: total cyclomatic complexity (WMC) > 20 (−10) or > 40
+(−20); worst-method cognitive complexity > 15 (−10) or > 30 (−20); method
+count > 10 (−5) or > 15 (−15).
 
 </details>
 

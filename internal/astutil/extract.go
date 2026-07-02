@@ -137,6 +137,7 @@ func ExtractMethods(file *ast.File, fpath string, fset *token.FileSet, info *typ
 		if fd.Body != nil {
 			m := WalkBody(fd.Body, info, fset)
 			mi.CyclomaticComplexity = m.Complexity + 1
+			mi.CognitiveComplexity = CognitiveComplexity(fd.Body, fd.Name.Name)
 			mi.AccessedFields = m.AccessedFields
 			mi.CalledMethods = m.CalledMethods
 			mi.HasPanic = m.HasPanic
