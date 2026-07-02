@@ -1,0 +1,35 @@
+# Ground-truth labels for github.com/spf13/cobra (pinned in ../corpus/go.mod).
+# See ../README.md for the labeling policy. All labels are split=test.
+labels:
+  - id: github.com/spf13/cobra.Command
+    want:
+      - principle: SRP
+        expect: ok
+        reason: "deliberate facade: a CLI command aggregates its flags, help, completion and execution; the ecosystem treats this as sound design (see docs/scoring-analysis.md)"
+      - principle: OCP
+        expect: ok
+        reason: "no type switching; behavior is extended via Run hooks and subcommands"
+      - principle: ISP
+        expect: ok
+        reason: "concrete API type that nothing implements or abstracts over; its wide method set does not force interface dependencies on clients"
+      - principle: DIP
+        expect: ok
+        reason: "fields are configuration values, callbacks (Run hooks) and self-references (parent/commands); it owns no injectable collaborator"
+
+  - id: github.com/spf13/cobra.Group
+    want:
+      - principle: SRP
+        expect: ok
+        reason: "two-field data record for grouping commands in help output"
+      - principle: DIP
+        expect: ok
+        reason: "pure data; no dependencies at all"
+
+  - id: github.com/spf13/cobra.CompletionOptions
+    want:
+      - principle: SRP
+        expect: ok
+        reason: "flat option record for shell-completion behavior"
+      - principle: DIP
+        expect: ok
+        reason: "boolean option fields only"

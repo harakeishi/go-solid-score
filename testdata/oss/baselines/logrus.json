@@ -1,0 +1,54 @@
+{
+  "split": "test",
+  "bootstrap_n": 1000,
+  "per_principle": {
+    "DIP": {
+      "precision": 0,
+      "recall": null,
+      "f1": null,
+      "f1_ci_low": null,
+      "f1_ci_high": null,
+      "recall_denominator": 0,
+      "tp": 0,
+      "fp": 2,
+      "fn": 0,
+      "tn": 2
+    },
+    "ISP": {
+      "precision": 0.6666666666666666,
+      "recall": 1,
+      "f1": 0.8,
+      "f1_ci_low": 0.5,
+      "f1_ci_high": 1,
+      "recall_denominator": 2,
+      "tp": 2,
+      "fp": 1,
+      "fn": 0,
+      "tn": 4
+    },
+    "OCP": {
+      "precision": null,
+      "recall": null,
+      "f1": null,
+      "f1_ci_low": null,
+      "f1_ci_high": null,
+      "recall_denominator": 0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 0,
+      "tn": 1
+    },
+    "SRP": {
+      "precision": 0,
+      "recall": null,
+      "f1": null,
+      "f1_ci_low": null,
+      "f1_ci_high": null,
+      "recall_denominator": 0,
+      "tp": 0,
+      "fp": 1,
+      "fn": 0,
+      "tn": 2
+    }
+  }
+}
