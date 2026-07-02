@@ -261,6 +261,92 @@ func TestJSONFormatter_SummarySeparatesStructsAndInterfaces(t *testing.T) {
 	}
 }
 
+// makeDetailedResults returns one struct and one interface target carrying
+// per-principle Details, for exercising verbose output.
+func makeDetailedResults() []*scorer.ScoreResult {
+	results := makeMixedResults()
+	results[0].Details = map[analyzer.Principle][]string{
+		analyzer.SRP: {"12 public methods (possible god class)"},
+		analyzer.DIP: {"field db: *sql.DB (concrete dependency)"},
+	}
+	results[1].Details = map[analyzer.Principle][]string{
+		analyzer.ISP: {"9 methods (fat interface)"},
+	}
+	return results
+}
+
+func TestTextFormatter_VerboseShowsDetails(t *testing.T) {
+	f := &formatter.TextFormatter{Verbose: true}
+	out, err := f.Format(makeDetailedResults())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"SRP: 12 public methods (possible god class)",
+		"DIP: field db: *sql.DB (concrete dependency)",
+		"ISP: 9 methods (fat interface)",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("verbose output missing detail %q:\n%s", want, out)
+		}
+	}
+	// SRP details must be listed before DIP details (fixed principle order).
+	if srp, dip := strings.Index(out, "SRP: 12"), strings.Index(out, "DIP: field"); srp > dip {
+		t.Errorf("details should follow principle order SRP..DIP, got:\n%s", out)
+	}
+}
+
+func TestTextFormatter_NonVerboseHidesDetails(t *testing.T) {
+	f := &formatter.TextFormatter{}
+	out, err := f.Format(makeDetailedResults())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out, "god class") || strings.Contains(out, "fat interface") {
+		t.Errorf("non-verbose output should not contain detail lines:\n%s", out)
+	}
+}
+
+func TestJSONFormatter_VerboseIncludesDetails(t *testing.T) {
+	f := &formatter.JSONFormatter{Verbose: true}
+	out, err := f.Format(makeDetailedResults())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var parsed struct {
+		Results []struct {
+			Name    string              `json:"name"`
+			Details map[string][]string `json:"details"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	byName := make(map[string]map[string][]string)
+	for _, r := range parsed.Results {
+		byName[r.Name] = r.Details
+	}
+	if got := byName["MyStruct"]["SRP"]; len(got) != 1 || got[0] != "12 public methods (possible god class)" {
+		t.Errorf("MyStruct SRP details = %v, want the god-class line", got)
+	}
+	if got := byName["MyIface"]["ISP"]; len(got) != 1 || got[0] != "9 methods (fat interface)" {
+		t.Errorf("MyIface ISP details = %v, want the fat-interface line", got)
+	}
+}
+
+func TestJSONFormatter_NonVerboseOmitsDetails(t *testing.T) {
+	f := &formatter.JSONFormatter{}
+	out, err := f.Format(makeDetailedResults())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The key must be absent entirely (omitempty), not present as null/empty,
+	// so pre-existing baselines remain byte-compatible.
+	if strings.Contains(out, `"details"`) {
+		t.Errorf("non-verbose JSON should not contain a details key:\n%s", out)
+	}
+}
+
 func TestJSONFormatter_EmitsIsInterface(t *testing.T) {
 	f := &formatter.JSONFormatter{}
 	out, err := f.Format(makeMixedResults())

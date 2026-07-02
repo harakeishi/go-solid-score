@@ -8,7 +8,13 @@ import (
 )
 
 // JSONFormatter outputs machine-readable JSON.
-type JSONFormatter struct{}
+type JSONFormatter struct {
+	// Verbose includes the per-principle detail lines (the reasons behind each
+	// score) as a "details" field on every result. Off by default so baselines
+	// stay minimal; the field is omitted (not null) when absent, which keeps
+	// verbose and non-verbose documents mutually decodable.
+	Verbose bool
+}
 
 // JSONOutput is the top-level JSON document emitted by JSONFormatter and is
 // also the shape consumed when decoding a baseline for diffing.
@@ -44,6 +50,10 @@ type JSONResult struct {
 	DIP         *float64           `json:"dip"`
 	Total       float64            `json:"total"`
 	Confidence  map[string]float64 `json:"confidence"`
+	// Details carries the per-principle reasons behind each score, keyed by
+	// principle name. Populated only in verbose mode and omitted otherwise, so
+	// pre-existing baselines (and non-verbose output) are unaffected.
+	Details map[string][]string `json:"details,omitempty"`
 }
 
 // Principles projects the per-principle scores into a map keyed by principle
@@ -119,6 +129,17 @@ func (f *JSONFormatter) Format(results []*scorer.ScoreResult) (string, error) {
 			DIP:         score(analyzer.DIP),
 			Total:       r.Total,
 			Confidence:  conf,
+		}
+		if f.Verbose {
+			details := make(map[string][]string)
+			for p, d := range r.Details {
+				if len(d) > 0 {
+					details[string(p)] = d
+				}
+			}
+			if len(details) > 0 {
+				jr.Details = details
+			}
 		}
 		out.Results = append(out.Results, jr)
 		if r.IsInterface {
