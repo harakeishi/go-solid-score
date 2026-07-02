@@ -37,3 +37,19 @@ func implementedInterfaceMethods(s *model.StructInfo, pkg *model.PackageInfo) ma
 	}
 	return ifaceMethods
 }
+
+// embedsInPackageInterface reports whether the struct embeds an in-package
+// interface. Such a struct satisfies that interface without declaring its
+// methods, so it must count as "implements an interface" for LSP: otherwise
+// the lsp-no-interface stop rule fires and the embed-missing-override signal
+// (the whole point of that pattern) can never be scored.
+func embedsInPackageInterface(s *model.StructInfo, pkg *model.PackageInfo) bool {
+	for _, embed := range s.Embeddings {
+		for _, iface := range pkg.Interfaces {
+			if iface.Name == embed {
+				return true
+			}
+		}
+	}
+	return false
+}
