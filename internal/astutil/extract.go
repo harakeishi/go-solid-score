@@ -189,26 +189,29 @@ func ExtractParams(fl *ast.FieldList, info *types.Info) []*model.ParamInfo {
 	for _, f := range fl.List {
 		typeName := ExprToString(f.Type)
 		isIface := false
+		isEmptyIface := false
 		isFunc := false
 		isValue := false
 		if info != nil && f.Type != nil {
 			tv := info.TypeOf(f.Type)
 			if tv != nil {
 				isIface = IsInterfaceType(tv)
+				isEmptyIface = IsEmptyInterfaceType(tv)
 				isFunc = IsFuncType(tv)
 				isValue = IsValueType(tv)
 			}
 		}
 		if len(f.Names) == 0 {
-			params = append(params, &model.ParamInfo{TypeName: typeName, IsIface: isIface, IsFunc: isFunc, IsValue: isValue})
+			params = append(params, &model.ParamInfo{TypeName: typeName, IsIface: isIface, IsEmptyIface: isEmptyIface, IsFunc: isFunc, IsValue: isValue})
 		}
 		for _, name := range f.Names {
 			params = append(params, &model.ParamInfo{
-				Name:     name.Name,
-				TypeName: typeName,
-				IsIface:  isIface,
-				IsFunc:   isFunc,
-				IsValue:  isValue,
+				Name:         name.Name,
+				TypeName:     typeName,
+				IsIface:      isIface,
+				IsEmptyIface: isEmptyIface,
+				IsFunc:       isFunc,
+				IsValue:      isValue,
 			})
 		}
 	}

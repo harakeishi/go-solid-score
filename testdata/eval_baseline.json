@@ -27,27 +27,27 @@
       "tn": 5
     },
     "LSP": {
-      "precision": null,
-      "recall": 0,
-      "f1": null,
-      "f1_ci_low": null,
-      "f1_ci_high": null,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1,
+      "f1_ci_low": 1,
+      "f1_ci_high": 1,
       "recall_denominator": 2,
-      "tp": 0,
+      "tp": 2,
       "fp": 0,
-      "fn": 2,
+      "fn": 0,
       "tn": 3
     },
     "OCP": {
-      "precision": null,
-      "recall": 0,
-      "f1": null,
-      "f1_ci_low": null,
-      "f1_ci_high": null,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1,
+      "f1_ci_low": 1,
+      "f1_ci_high": 1,
       "recall_denominator": 1,
-      "tp": 0,
+      "tp": 1,
       "fp": 0,
-      "fn": 1,
+      "fn": 0,
       "tn": 2
     },
     "SRP": {
@@ -60,7 +60,7 @@
       "tp": 1,
       "fp": 0,
       "fn": 0,
-      "tn": 3
+      "tn": 4
     }
   }
 }

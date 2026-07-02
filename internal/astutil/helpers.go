@@ -2,7 +2,9 @@ package astutil
 
 import (
 	"go/ast"
+	"go/token"
 	"go/types"
+	"strconv"
 )
 
 // docText returns the text of a doc comment group with the comment markers
@@ -80,6 +82,41 @@ func IsInterfaceType(t types.Type) bool {
 		_, ok := u.(*types.Interface)
 		return ok
 	})
+}
+
+// IsEmptyInterfaceType reports whether t is the empty interface (any /
+// interface{}), possibly behind pointers or collections, including named
+// empty interfaces. An empty interface abandons type information rather than
+// abstracting behavior, so OCP does not reward it as an interface parameter.
+//
+// A generic type parameter is NOT an empty interface, even though its
+// underlying type is its constraint interface and a loose constraint (any,
+// comparable) has no methods: `v T` keeps full type identity — generics are
+// the OCP-friendly alternative to interface{} + type switch — so the walk
+// checks for *types.TypeParam before taking Underlying at every level.
+func IsEmptyInterfaceType(t types.Type) bool {
+	for i := 0; i < unwrapNestDepth; i++ {
+		if _, ok := t.(*types.TypeParam); ok {
+			return false
+		}
+		switch c := t.Underlying().(type) {
+		case *types.Interface:
+			return c.NumMethods() == 0
+		case *types.Pointer:
+			t = c.Elem()
+		case *types.Slice:
+			t = c.Elem()
+		case *types.Array:
+			t = c.Elem()
+		case *types.Chan:
+			t = c.Elem()
+		case *types.Map:
+			t = c.Elem()
+		default:
+			return false
+		}
+	}
+	return false
 }
 
 // IsFuncType reports whether t denotes a function type, including named
@@ -208,14 +245,50 @@ func unwrapElem(t types.Type, match func(types.Type) bool) bool {
 	return false
 }
 
-// IsNoopBody checks if a function body is a no-op (empty or bare return).
+// IsNoopBody checks if a function body is a no-op: empty, a bare return, or a
+// single return whose every result is a zero-value literal (nil, false, 0, "").
+// Such a body claims the contract was fulfilled while doing nothing — the
+// silent-no-op LSP smell. A return of a computed value, a named constant, or a
+// non-zero literal is deliberate behavior and does not count.
 func IsNoopBody(body *ast.BlockStmt) bool {
 	if body == nil || len(body.List) == 0 {
 		return true
 	}
 	if len(body.List) == 1 {
 		if ret, ok := body.List[0].(*ast.ReturnStmt); ok {
-			return len(ret.Results) == 0
+			for _, r := range ret.Results {
+				if !isZeroValueExpr(r) {
+					return false
+				}
+			}
+			return true
+		}
+	}
+	return false
+}
+
+// isZeroValueExpr reports whether e is a zero-value literal: nil, false, a
+// numeric literal equal to zero, or an empty string, possibly parenthesized.
+// Identifiers other than nil/false (named constants, variables) are excluded —
+// a named constant expresses a deliberate result even when its value happens
+// to be zero. Conversion forms (error(nil), []byte(nil)) are not recognized;
+// they would need type information this syntactic check does not have.
+func isZeroValueExpr(e ast.Expr) bool {
+	switch v := e.(type) {
+	case *ast.ParenExpr:
+		return isZeroValueExpr(v.X)
+	case *ast.Ident:
+		return v.Name == "nil" || v.Name == "false"
+	case *ast.BasicLit:
+		switch v.Kind {
+		case token.INT:
+			n, err := strconv.ParseUint(v.Value, 0, 64)
+			return err == nil && n == 0
+		case token.FLOAT:
+			f, err := strconv.ParseFloat(v.Value, 64)
+			return err == nil && f == 0
+		case token.STRING:
+			return v.Value == `""` || v.Value == "``"
 		}
 	}
 	return false

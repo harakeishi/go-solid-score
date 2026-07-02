@@ -100,13 +100,19 @@ rules:
     confidence: 0.3
     stop: true
 
+  # A type switch over concrete types is the canonical OCP violation: adding a
+  # new type means editing the switch. Because of the cap, switches alone cost
+  # at most 40 (score 60, above the violation threshold of 50); crossing the
+  # threshold happens in combination with the assertion/density penalties that
+  # systematic concrete-type branching also incurs — no longer offset by the
+  # interface-parameter bonus, which empty-interface params stopped earning.
   - id: ocp-type-switch
     principle: OCP
     metric: type_switch_count
     when: "> 0"
     effect: penalty
     from_metric: true
-    scale: 15
+    scale: 20
     cap: 40
     message: "%v type switches detected"
 
@@ -173,22 +179,37 @@ rules:
     effect: none
     confidence: 0.85
 
+  # An unconditional panic in a contract method (a "not implemented" stub) is a
+  # definitive substitutability violation: any caller holding the interface
+  # crashes. One instance already proves the type cannot substitute, so the
+  # penalty is a flat 60 — past the violation threshold (50) — regardless of
+  # how many methods panic.
   - id: lsp-unconditional-panic
     principle: LSP
     metric: unconditional_panic_count
     when: "> 0"
     effect: penalty
-    from_metric: true
-    scale: 20
-    message: "%v interface method(s) panic unconditionally (possible LSP violation)"
+    value: 60
+    message: "%v interface method(s) panic unconditionally (LSP violation)"
 
+  # A silent no-op (empty body, bare return, or returning only zero values)
+  # claims the contract was fulfilled while doing nothing. One instance can be
+  # legitimate (e.g. Close on a type with nothing to release), so a single
+  # no-op stays above the violation threshold; two or more indicate a partial
+  # implementation and cross it. Known trade-off: a deliberate Null Object
+  # (zap.NewNop-style — every method intentionally does nothing) is
+  # structurally identical to a partial implementation and gets flagged too;
+  # no static signal distinguishes them. Disable or retune this rule per repo
+  # if that pattern is idiomatic there. Only in-package interfaces are
+  # matched, so null objects for external interfaces are unaffected.
   - id: lsp-noop
     principle: LSP
     metric: noop_count
     when: "> 0"
     effect: penalty
     from_metric: true
-    scale: 15
+    scale: 30
+    cap: 60
     message: "%v no-op interface method(s)"
 
   - id: lsp-embed-missing-override

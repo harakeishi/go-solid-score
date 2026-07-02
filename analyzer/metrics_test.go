@@ -54,3 +54,54 @@ func TestPresetsValidateAgainstMetricNames(t *testing.T) {
 		t.Fatalf("preset rules reference unknown metric(s): %v", err)
 	}
 }
+
+// structMetricsFor parses the given testdata package once and returns the
+// metrics for each named struct, keyed by name.
+func structMetricsFor(t *testing.T, pkgPath string, structNames ...string) map[string]rules.Metrics {
+	t.Helper()
+	pkgs, err := parser.Parse([]string{pkgPath})
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	out := make(map[string]rules.Metrics, len(structNames))
+	for _, pkg := range pkgs {
+		for _, s := range pkg.Structs {
+			for _, name := range structNames {
+				if s.Name == name {
+					out[name] = analyzer.StructMetrics(s, pkg, nil)
+				}
+			}
+		}
+	}
+	for _, name := range structNames {
+		if _, ok := out[name]; !ok {
+			t.Fatalf("struct %s not found in %s", name, pkgPath)
+		}
+	}
+	return out
+}
+
+// TestIfaceParamCount_ExcludesEmptyInterface verifies that empty-interface
+// parameters (any / interface{}) do not count toward the OCP
+// interface-parameter bonus: Router's methods take only interface{} params —
+// the very values its type switches downcast — so rewarding them would offset
+// the penalty for the switches themselves.
+func TestIfaceParamCount_ExcludesEmptyInterface(t *testing.T) {
+	m := structMetricsFor(t, "../testdata/ocp", "Router")
+	if got := m["Router"]["iface_param_count"]; got != 0 {
+		t.Errorf("Router iface_param_count = %v, want 0 (interface{} params must not earn the bonus)", got)
+	}
+}
+
+// TestNoopCount_DetectsZeroValueReturns verifies that contract methods whose
+// body only returns zero values (the silent no-op) are counted, not just empty
+// bodies and bare returns.
+func TestNoopCount_DetectsZeroValueReturns(t *testing.T) {
+	m := structMetricsFor(t, "../testdata/lsp", "NoopSaver", "GuardedSaver")
+	if got := m["NoopSaver"]["noop_count"]; got != 2 {
+		t.Errorf("NoopSaver noop_count = %v, want 2 (Save/Load return only zero values)", got)
+	}
+	if got := m["GuardedSaver"]["noop_count"]; got != 0 {
+		t.Errorf("GuardedSaver noop_count = %v, want 0 (guarded methods do real work)", got)
+	}
+}
