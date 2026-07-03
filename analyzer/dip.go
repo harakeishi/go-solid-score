@@ -19,6 +19,67 @@ type depWeight struct {
 	iface float64
 }
 
+// dataConventionMethods are method names that data records idiomatically
+// implement to satisfy fmt/error/encoding protocols (fmt.Stringer,
+// fmt.GoStringer, error, json/text/yaml/xml/binary marshalling). They expose
+// the record's own data in another shape rather than invoking behavior on
+// collaborators, so implementing them does not make a type behavioral for the
+// DIP applicability test in isDataType.
+var dataConventionMethods = map[string]bool{
+	"String": true, "GoString": true, "Error": true, "Format": true,
+	"MarshalJSON": true, "UnmarshalJSON": true,
+	"MarshalText": true, "UnmarshalText": true,
+	"MarshalYAML": true, "UnmarshalYAML": true,
+	"MarshalXML": true, "UnmarshalXML": true,
+	"MarshalBinary": true, "UnmarshalBinary": true,
+}
+
+// isDataType reports whether the struct is a behavior-less data record: a type
+// that carries data but exposes no behavior of its own. DIP governs the
+// inversion of *collaborator* dependencies — abstractions a high-level policy
+// calls into — so a type with no behavior has nothing to invert: the structs it
+// aggregates (`[]*ParamInfo`, a nested report block) are the data it stores,
+// not services it uses. Such targets are reported as "DIP not applicable"
+// (like dip-no-dependencies) instead of being scored on their field types,
+// which systematically flagged idiomatic data models (AST nodes, DTOs,
+// serialization/report structs) as total DIP violations.
+//
+// A struct qualifies only when it has no embedded types (embedding promotes
+// the embedded type's method set, i.e. inherits behavior) and every declared
+// method is one of:
+//
+//   - a documented Go convention method — the errors Is/As/Unwrap protocol
+//     (isConventionMethod, matched by signature) or a formatting/marshalling
+//     method from dataConventionMethods;
+//   - a pure accessor (isAccessorMethod) — it returns a value and invokes
+//     nothing while producing it.
+//
+// Any other method keeps the type behavioral, so genuine collaborator owners
+// remain fully scored: a method that returns nothing exists for its effect
+// (e.g. a Run method driving a held `[]*Worker`), and a method that calls
+// functions or methods delegates work rather than exposing stored data.
+func isDataType(s *model.StructInfo) bool {
+	if len(s.Embeddings) > 0 {
+		return false
+	}
+	for _, m := range s.Methods {
+		if isConventionMethod(m) || dataConventionMethods[m.Name] || isAccessorMethod(m) {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+// isAccessorMethod reports whether a method is a pure accessor over the
+// receiver's data: it returns at least one value and calls no functions or
+// methods while computing it (CalledMethods records every selector-based
+// function reference in the body, so filtering, counting, or reshaping own
+// fields still qualifies — delegation of any kind does not).
+func isAccessorMethod(m *model.MethodInfo) bool {
+	return len(m.Returns) > 0 && len(m.CalledMethods) == 0
+}
+
 const (
 	fieldDepWeight       = 1.0
 	constructorDepWeight = 1.0

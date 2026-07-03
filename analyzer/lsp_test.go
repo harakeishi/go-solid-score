@@ -73,3 +73,54 @@ func TestLSPAnalyzer_GuardPanicNotPenalized(t *testing.T) {
 	}
 	t.Error("GuardedSaver not found in results")
 }
+
+// TestLSPAnalyzer_EmbeddedInterfaceUnderOverride verifies that a struct which
+// satisfies an in-package interface only by embedding it is still held to that
+// contract: without this, the no-interface stop rule would fire (the struct
+// declares almost none of the methods itself) and the embed-missing-override
+// penalty could never apply.
+func TestLSPAnalyzer_EmbeddedInterfaceUnderOverride(t *testing.T) {
+	pkgs, err := parser.Parse([]string{"../testdata/lsp"})
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+
+	a := analyzer.NewLSPAnalyzer()
+	results := a.Analyze(pkgs[0])
+
+	for _, r := range results {
+		if r.TargetName == "LazyCodec" {
+			if r.Score >= 50 {
+				t.Errorf("LazyCodec LSP score %.1f should be < 50 "+
+					"(embeds Codec but overrides 1 of 7 methods)", r.Score)
+			}
+			return
+		}
+	}
+	t.Error("LazyCodec not found in results")
+}
+
+// TestLSPAnalyzer_InjectedDecoratorNotPenalized is the counterpart of the
+// LazyCodec test: the identical embed-and-override-little AST shape is the
+// standard decorator pattern when the constructor injects a real value for
+// the embedded interface, and must keep a full score.
+func TestLSPAnalyzer_InjectedDecoratorNotPenalized(t *testing.T) {
+	pkgs, err := parser.Parse([]string{"../testdata/lsp"})
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+
+	a := analyzer.NewLSPAnalyzer()
+	results := a.Analyze(pkgs[0])
+
+	for _, r := range results {
+		if r.TargetName == "LoggingCodec" {
+			if r.Score < 100 {
+				t.Errorf("LoggingCodec LSP score %.1f should be 100 "+
+					"(constructor-injected decorator; non-overridden methods delegate)", r.Score)
+			}
+			return
+		}
+	}
+	t.Error("LoggingCodec not found in results")
+}

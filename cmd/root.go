@@ -79,9 +79,9 @@ func run(cmd *cobra.Command, args []string) error {
 	var f formatter.Formatter
 	switch cfg.Format {
 	case "json":
-		f = &formatter.JSONFormatter{}
+		f = &formatter.JSONFormatter{Verbose: verbose}
 	default:
-		f = &formatter.TextFormatter{}
+		f = &formatter.TextFormatter{Verbose: verbose}
 	}
 
 	output, err := f.Format(allResults)

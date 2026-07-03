@@ -22,11 +22,13 @@ type FieldInfo struct {
 	// IsFunc reports whether the field's (unwrapped) type is a function type,
 	// i.e. a callback/strategy field rather than a concrete collaborator.
 	IsFunc bool
-	// IsValue reports whether the field's core element type (after unwrapping
-	// pointers/slices/maps/etc.) is a builtin basic type — i.e. pure data such
-	// as int, string, map[string]string, or a named alias of one. Collections
-	// of structs or interfaces are NOT value types: their element is a
-	// collaborator that DIP still weighs.
+	// IsValue reports whether the field models stored data rather than a
+	// collaborator: a type whose core element is a builtin basic type (int,
+	// string, map[string]string, a named alias of one), a value-element
+	// collection of a struct ([]Message), or a bare method-less value struct.
+	// Pointer collections of structs ([]*Worker), bare pointers, and interface
+	// elements are NOT value types: those are collaborators or abstractions
+	// that DIP still weighs. See astutil.IsValueType.
 	IsValue bool
 }
 

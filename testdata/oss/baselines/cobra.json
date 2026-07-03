@@ -3,16 +3,16 @@
   "bootstrap_n": 1000,
   "per_principle": {
     "DIP": {
-      "precision": 0,
+      "precision": null,
       "recall": null,
       "f1": null,
       "f1_ci_low": null,
       "f1_ci_high": null,
       "recall_denominator": 0,
       "tp": 0,
-      "fp": 1,
+      "fp": 0,
       "fn": 0,
-      "tn": 2
+      "tn": 3
     },
     "ISP": {
       "precision": 0,

@@ -112,16 +112,19 @@ func TestEvaluate_OCPLSPRecall(t *testing.T) {
 	if !ok {
 		t.Fatal("OCP missing from report")
 	}
-	if ocp.TP < 1 || ocp.FN != 0 {
-		t.Errorf("expected OCP to catch the known violation (Router), got TP=%d FN=%d", ocp.TP, ocp.FN)
+	// One FN is expected and documented: KindRegistry switches on a value enum
+	// rather than on types, a known blind spot of type-switch-based detection
+	// kept in the corpus as measurable headroom. Everything else must be caught.
+	if ocp.TP < 3 || ocp.FN > 1 {
+		t.Errorf("expected OCP to catch the known violations (Router, Exporter, ReflectMapper) with at most the documented KindRegistry FN, got TP=%d FN=%d", ocp.TP, ocp.FN)
 	}
 
 	lsp, ok := rep.PerPrinciple["LSP"]
 	if !ok {
 		t.Fatal("LSP missing from report")
 	}
-	if lsp.TP < 2 || lsp.FN != 0 {
-		t.Errorf("expected LSP to catch the known violations (ReadOnlySaver, NoopSaver), got TP=%d FN=%d", lsp.TP, lsp.FN)
+	if lsp.TP < 5 || lsp.FN != 0 {
+		t.Errorf("expected LSP to catch the known violations (ReadOnlySaver, NoopSaver, PartialStore, ZeroStore, LazyCodec), got TP=%d FN=%d", lsp.TP, lsp.FN)
 	}
 }
 

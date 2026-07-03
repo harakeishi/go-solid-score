@@ -2,6 +2,7 @@ package rules
 
 import (
 	"fmt"
+	"math"
 	"strings"
 )
 
@@ -242,14 +243,22 @@ func whereHolds(where []whereClause, m Metrics) bool {
 	return true
 }
 
-// addDetail appends a formatted detail line if a message is present. A "%"
-// verb in the message is filled with the metric value.
+// addDetail appends a formatted detail line if a message is present. A format
+// verb in the message (e.g. "%v") is filled with the metric value, rounded to
+// two decimals so ratio metrics don't leak full float precision into the
+// detail line (LSCC=0.03, not LSCC=0.03333333333333333); whole numbers still
+// render bare ("16"). If formatting fails — the "%" was a literal, or the verb
+// doesn't apply to float64 — the message is kept verbatim rather than emitting
+// fmt's %! error markers.
 func addDetail(out *Outcome, message string, metricVal float64) {
 	if message == "" {
 		return
 	}
 	if strings.Contains(message, "%") {
-		message = fmt.Sprintf(message, metricVal)
+		formatted := fmt.Sprintf(message, math.Round(metricVal*100)/100)
+		if !strings.Contains(formatted, "%!") {
+			message = formatted
+		}
 	}
 	out.Details = append(out.Details, message)
 }
