@@ -137,6 +137,7 @@ func ExtractMethods(file *ast.File, fpath string, fset *token.FileSet, info *typ
 		if fd.Body != nil {
 			m := WalkBody(fd.Body, info, fset)
 			mi.CyclomaticComplexity = m.Complexity + 1
+			mi.CognitiveComplexity = CognitiveComplexity(fd.Body, fd.Name.Name, receiverVarName(fd.Recv))
 			mi.AccessedFields = m.AccessedFields
 			mi.CalledMethods = m.CalledMethods
 			mi.HasPanic = m.HasPanic
@@ -152,6 +153,19 @@ func ExtractMethods(file *ast.File, fpath string, fset *token.FileSet, info *typ
 
 		si.Methods = append(si.Methods, mi)
 	}
+}
+
+// receiverVarName returns the receiver variable's name for recursion
+// detection. An unnamed (`func (Foo) M()`) or blank receiver yields "_": the
+// method cannot call itself through its receiver, and the blank name — which
+// no call expression can reference — keeps CognitiveComplexity from falling
+// back to package-function matching, where a bare same-named call would be
+// miscounted as recursion.
+func receiverVarName(recv *ast.FieldList) string {
+	if recv == nil || len(recv.List) == 0 || len(recv.List[0].Names) == 0 {
+		return "_"
+	}
+	return recv.List[0].Names[0].Name
 }
 
 // ExtractFuncInfo extracts information from a package-level function.

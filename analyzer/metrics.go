@@ -43,11 +43,27 @@ func StructMetrics(s *model.StructInfo, pkg *model.PackageInfo, whitelist []stri
 	m["lscc"] = lscc
 	m["own_field_access_method_count"] = float64(ownFieldMethodCount)
 	m["cohesion_method_count"] = float64(len(effectiveCohesionMethods(methods)))
+	// total_complexity is WMC (Weighted Methods per Class, Chidamber & Kemerer
+	// 1994) with cyclomatic complexity as the method weight. Note WMC correlates
+	// strongly with class size (El Emam 2001), which is why the preset rules
+	// pair it with size-independent cohesion signals instead of scoring on it
+	// alone. cognitive_complexity is the SonarSource understandability metric
+	// summed the same way; max_cognitive_complexity is the single worst method,
+	// which is what the per-function thresholds (Sonar default 15, gocognit
+	// default 30) are defined against.
 	totalComplexity := 0
+	totalCognitive := 0
+	maxCognitive := 0
 	for _, mth := range methods {
 		totalComplexity += mth.CyclomaticComplexity
+		totalCognitive += mth.CognitiveComplexity
+		if mth.CognitiveComplexity > maxCognitive {
+			maxCognitive = mth.CognitiveComplexity
+		}
 	}
 	m["total_complexity"] = float64(totalComplexity)
+	m["cognitive_complexity"] = float64(totalCognitive)
+	m["max_cognitive_complexity"] = float64(maxCognitive)
 
 	// --- OCP: type switches/assertions/reflection density ---
 	var ts, ta, reflectN, stmts, ifaceParams int
@@ -76,8 +92,12 @@ func StructMetrics(s *model.StructInfo, pkg *model.PackageInfo, whitelist []stri
 	m["iface_param_count"] = float64(ifaceParams)
 
 	// --- LSP: contract fidelity of implemented interface methods ---
+	// A struct that embeds an in-package interface satisfies it through the
+	// embedded value, so it is under contract even though it declares none of
+	// the methods itself — without this the no-interface stop rule would mask
+	// the embed-missing-override signal entirely.
 	ifaceMethods := implementedInterfaceMethods(s, pkg)
-	m["implements_interface"] = boolMetric(len(ifaceMethods) > 0)
+	m["implements_interface"] = boolMetric(len(ifaceMethods) > 0 || embedsInPackageInterface(s, pkg))
 	panicCount, noopCount := 0, 0
 	for _, mth := range methods {
 		if !ifaceMethods[mth.Name] {
@@ -93,6 +113,7 @@ func StructMetrics(s *model.StructInfo, pkg *model.PackageInfo, whitelist []stri
 	m["unconditional_panic_count"] = float64(panicCount)
 	m["noop_count"] = float64(noopCount)
 	m["embed_missing_override_count"] = float64(embedMissingOverrides(s, pkg))
+	m["embedded_iface_injected"] = boolMetric(embeddedIfaceInjected(s, pkg))
 
 	// --- ISP: public-surface size, large-interface implementation, cohesion ---
 	m["is_decorator"] = boolMetric(isDecoratorPattern(s, pubMethods))
@@ -237,10 +258,11 @@ var metricNames = []string{
 	// struct metrics
 	"method_count", "public_method_count", "field_count", "has_fields",
 	"lscc", "cohesion_method_count", "own_field_access_method_count", "total_complexity",
+	"cognitive_complexity", "max_cognitive_complexity",
 	"type_switch_count", "type_assert_count", "reflect_count", "total_stmts",
 	"type_check_density", "iface_param_count",
 	"implements_interface", "unconditional_panic_count", "noop_count",
-	"embed_missing_override_count",
+	"embed_missing_override_count", "embedded_iface_injected",
 	"is_decorator", "public_lcom4", "isp_large_iface_penalty", "isp_composition_bonus",
 	"weighted_dep_total", "weighted_dep_iface", "structural_dep_total",
 	"iface_dep_ratio", "has_constructor_injection", "is_data_type",

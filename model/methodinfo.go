@@ -9,11 +9,15 @@ type MethodInfo struct {
 	LineEnd              int
 	IsExported           bool
 	CyclomaticComplexity int
-	AccessedFields       []string
-	CalledMethods        []string
-	Params               []*ParamInfo
-	Returns              []*ReturnInfo
-	HasPanic             bool
+	// CognitiveComplexity measures how hard the body is for a human to read
+	// (SonarSource cognitive complexity): unlike cyclomatic complexity it
+	// charges a growing penalty for nesting depth.
+	CognitiveComplexity int
+	AccessedFields      []string
+	CalledMethods       []string
+	Params              []*ParamInfo
+	Returns             []*ReturnInfo
+	HasPanic            bool
 	// HasUnconditionalPanic is true when the method panics on its straight-line
 	// path (not merely inside an argument/state guard). This is the signal LSP
 	// uses, since a guard panic is idiomatic fail-fast rather than a

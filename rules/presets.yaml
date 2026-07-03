@@ -76,12 +76,28 @@ rules:
       - { when: "< 0.4", value: 25, message: "low cohesion (LSCC=%v)" }
       - { when: "< 0.6", value: 10, message: "moderate cohesion (LSCC=%v)" }
 
+  # total_complexity is WMC (Weighted Methods per Class, C&K 1994) with
+  # cyclomatic weights. WMC correlates with class size, so this rule stays a
+  # secondary signal next to the size-independent LSCC cohesion rule.
   - id: srp-complexity
     principle: SRP
     metric: total_complexity
     bands:
-      - { when: "> 40", value: 20, message: "high total complexity (%v)" }
-      - { when: "> 20", value: 10, message: "moderate total complexity (%v)" }
+      - { when: "> 40", value: 20, message: "high total complexity (WMC=%v)" }
+      - { when: "> 20", value: 10, message: "moderate total complexity (WMC=%v)" }
+
+  # Cognitive complexity (SonarSource) charges a growing penalty for nesting
+  # depth, catching hard-to-read methods that flat branch counting misses.
+  # Thresholds follow the per-function conventions: Sonar's S3776 default is
+  # 15, golangci-lint's gocognit default is 30 — so one method past 30 is a
+  # clear smell and past 15 a mild one. Scored on the worst single method
+  # (max), not the sum, to avoid double-charging size already penalized by WMC.
+  - id: srp-cognitive-complexity
+    principle: SRP
+    metric: max_cognitive_complexity
+    bands:
+      - { when: "> 30", value: 20, message: "method with very high cognitive complexity (%v)" }
+      - { when: "> 15", value: 10, message: "method with high cognitive complexity (%v)" }
 
   - id: srp-method-count
     principle: SRP
@@ -212,9 +228,18 @@ rules:
     cap: 60
     message: "%v no-op interface method(s)"
 
+  # Embedding an in-package interface without overriding its methods is only a
+  # smell when nothing fills the embedded value: the zero struct then panics on
+  # every inherited call. A decorator/middleware whose constructor takes the
+  # embedded interface as a parameter is the legitimate form of the identical
+  # AST shape, so it is exempted via embedded_iface_injected. Known trade-off:
+  # a decorator whose inner value arrives via a setter or composite literal
+  # (not a New* constructor parameter) is still flagged — disable or retune
+  # this rule per repo if that pattern is idiomatic there.
   - id: lsp-embed-missing-override
     principle: LSP
     metric: embed_missing_override_count
+    where: ["embedded_iface_injected == 0"]
     when: "> 0"
     effect: penalty
     from_metric: true
